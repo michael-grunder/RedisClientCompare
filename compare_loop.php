@@ -20,6 +20,10 @@ function usage(): void {
 ");
 }
 
+function getRedisVersion(string $php) {
+    return shell_exec("$php -r \"echo phpversion('redis');\"");
+}
+
 if (!isset($opts['old'], $opts['new'])) {
     usage();
     exit(2);
@@ -36,6 +40,9 @@ $PORT    = (int)($opts['port'] ?? 6379);
 $GEN = __DIR__ . '/gen_commands.php';
 $RUN = __DIR__ . '/runner.php';
 $CMP = __DIR__ . '/compare.php';
+
+$old_ver = getRedisVersion($PHP_OLD);
+$new_ver = getRedisVersion($PHP_NEW);
 
 foreach ([$GEN, $RUN, $CMP] as $p) {
     if (!is_file($p)) {
@@ -69,6 +76,11 @@ function run_cmd(string $cmd): int {
 }
 
 function sh($s): string { return escapeshellarg($s); }
+
+printf("Comparing phpredis %s (php: %s) vs %s (php: %s)\n",
+    $old_ver ?: 'N/A', $PHP_OLD,
+    $new_ver ?: 'N/A', $PHP_NEW
+);
 
 $i = 0;
 while (true) {

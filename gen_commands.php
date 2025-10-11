@@ -19,13 +19,34 @@ if ($count <= 0) {
 }
 
 $cmds = [
-    "SET", "GET", "DEL", "EXISTS", "INCR", "DECR",
-    "LPUSH", "RPUSH", "LPOP", "RPOP", "LRANGE",
-    "SADD", "SREM", "SMEMBERS",
-    "HSET", "HGET", "HDEL", "HGETALL",
-    "ZADD", "ZRANGE", "ZREM",
-    "EXPIRE", "TTL", "PERSIST",
-    "MGET", "MSET",
+    "DECR",
+    "DEL",
+    "EXISTS",
+    "EXPIRE",
+    "GET",
+    "HDEL",
+    "HGET",
+    "HGETALL",
+    "HMGET",
+    "HMSET",
+    "HSET",
+    "INCR",
+    "LPOP",
+    "LPUSH",
+    "LRANGE",
+    "MGET",
+    "MSET",
+    "PERSIST",
+    "RPOP",
+    "RPUSH",
+    "SADD",
+    "SET",
+    "SMEMBERS",
+    "SREM",
+    "TTL",
+    "ZADD",
+    "ZRANGE",
+    "ZREM",
 ];
 
 function rnd_ascii($min, $max) {
@@ -169,6 +190,24 @@ for ($i = 0; $i < $count; $i++) {
     case "HSET":
         // Single field form to keep JSON as a flat array.
         $args = [rnd_scalar_key(), rnd_scalar_field(), rnd_value()];
+        break;
+
+    case "HMGET":
+        $n = random_int(1, 20);
+        $fields = [];
+        for ($j = 0; $j < $n; $j++)
+            $fields[] = rnd_scalar_field();
+        $args = array_merge([rnd_scalar_key()], $fields);
+        break;
+
+    case "HMSET":
+        $n = random_int(1, 10);
+        $pairs = [];
+        for ($j = 0; $j < $n; $j++) {
+            $pairs[] = rnd_scalar_field();
+            $pairs[] = rnd_value();
+        }
+        $args = array_merge([rnd_scalar_key()], $pairs);
         break;
 
     case "HGETALL":
