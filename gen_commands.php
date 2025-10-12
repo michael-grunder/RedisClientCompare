@@ -2,358 +2,76 @@
 <?php
 // gen_commands.php
 // Usage: php gen_commands.php <count> <out.jsonl>
-// Generates random *typed* Redis command args (ints, floats, strings)
-// to exercise PhpRedis' coercion paths. One JSON array per line.
+// Generates random Redis command argument vectors using command classes.
 
 if ($argc < 3) {
-    fwrite(STDERR,
-        "Usage: php gen_commands.php <count> <out.jsonl>\n");
+    fwrite(STDERR, "Usage: php gen_commands.php <count> <out.jsonl>\n");
     exit(2);
 }
 
-$count = (int)$argv[1];
+$count = (int) $argv[1];
 $outfn = $argv[2];
 if ($count <= 0) {
     fwrite(STDERR, "count must be > 0\n");
     exit(2);
 }
 
-$cmds = [
-    "APPEND",
-    "DECR",
-    "DECRBY",
-    "DEL",
-    "EXISTS",
-    "EXPIRE",
-    "GET",
-    "GETSET",
-    "HDEL",
-    "HGET",
-    "HGETALL",
-    "HINCRBY",
-    "HINCRBYFLOAT",
-    "HMGET",
-    "HMSET",
-    "HSET",
-    "HSETNX",
-    "INCR",
-    "INCRBY",
-    "INCRBYFLOAT",
-    "LINDEX",
-    "LLEN",
-    "LPOP",
-    "LPUSH",
-    "LRANGE",
-    "LREM",
-    "LTRIM",
-    "MGET",
-    "MSET",
-    "PERSIST",
-    "RPOP",
-    "RPOPLPUSH",
-    "RPUSH",
-    "SADD",
-    "SCARD",
-    "SET",
-    "SETEX",
-    "SETNX",
-    "SISMEMBER",
-    "SMEMBERS",
-    "SREM",
-    "TTL",
-    "ZADD",
-    "ZCARD",
-    "ZRANGE",
-    "ZRANGEBYSCORE",
-    "ZRANK",
-    "ZREM",
-    "ZINCRBY",
-    "ZSCORE",
-];
+$commandsDir = __DIR__ . '/cmds';
+require_once $commandsDir . '/Command.php';
 
-function rnd_ascii($min, $max) {
-    $len = random_int($min, $max);
-    $chars = "abcdefghijklmnopqrstuvwxyz0123456789_-:.";
-    $s = '';
-    for ($i = 0; $i < $len; $i++) {
-        $s .= $chars[random_int(0, strlen($chars)-1)];
+$declaredBefore = get_declared_classes();
+$files = glob($commandsDir . '/*.php') ?: [];
+sort($files);
+
+foreach ($files as $file) {
+    if ($file === $commandsDir . '/Command.php') {
+        continue;
     }
-    return $s;
+    require_once $file;
 }
 
-function rnd_unicode() {
-    // A little unicode spice (emoji + accents).
-    $bank = [
-        "αβγ", "Ångström", "naïve", "élan", "ßharp",
-        "日本語", "русский", "مرحبا", "😀", "🔥", "🛰️"
-    ];
-    return $bank[random_int(0, count($bank)-1)];
-}
-
-function rnd_num_string() {
-    // Strings that *look* numeric (to tickle coercion),
-    // including leading zeros, signs, sci-notation, suffixes.
-    $kinds = random_int(0, 6);
-    switch ($kinds) {
-    case 0:  return (string)random_int(-100000, 100000);
-    case 1:  return "0" . str_pad(
-                 (string)random_int(0, 999999), 5, "0", STR_PAD_LEFT);
-    case 2:  return "-" . random_int(1, 99999);
-    case 3:  return (string)(random_int(1, 9999)) . "e" .
-                    random_int(1, 6);
-    case 4:  return (string)(random_int(1, 9999)) . "."
-                    . random_int(0, 9999);
-    case 5:  return (string)random_int(1, 9999) . "abcff";
-    default: return "42abc" . random_int(0, 999);
+$declaredAfter = get_declared_classes();
+$commandClasses = [];
+foreach (array_diff($declaredAfter, $declaredBefore) as $class) {
+    if (!is_subclass_of($class, Command::class)) {
+        continue;
     }
-}
 
-function rnd_string() {
-    $pick = random_int(0, 6);
-    if ($pick <= 2) return rnd_ascii(1, 30);
-    if ($pick == 3) return rnd_unicode();
-    if ($pick == 4) return rnd_num_string();
-    if ($pick == 5) return " " . rnd_ascii(1, 10) . " ";
-    // very rarely empty string (edge case)
-    return random_int(0, 30) === 0 ? "" : rnd_ascii(1, 5);
-}
-
-function rnd_int() {
-    return random_int(-1_000_000, 1_000_000);
-}
-
-function rnd_float() {
-    // varied magnitude + precision
-    $v = random_int(-1_000_000, 1_000_000) / random_int(1, 10_000);
-    // occasionally scientific
-    if (random_int(0, 5) === 0) {
-        $v *= pow(10, random_int(-6, 6));
+    $ref = new ReflectionClass($class);
+    if ($ref->isAbstract()) {
+        continue;
     }
-    return (float)$v;
+
+    $commandClasses[] = $class;
 }
 
-function rnd_scalar_key() {
-    // Bias towards strings, but include ints/floats.
-    $pick = random_int(0, 9);
-    if ($pick <= 4) return rnd_string();
-    if ($pick <= 7) return rnd_int();
-    return rnd_float();
+if (empty($commandClasses)) {
+    fwrite(STDERR, "No command classes found under {$commandsDir}\n");
+    exit(1);
 }
 
-function rnd_scalar_field() {
-    // Same distribution, separate generator to vary independently.
-    return rnd_scalar_key();
+$commandInstances = array_map(
+    function ($class) {
+        /** @var Command $instance */
+        $instance = new $class();
+        return $instance;
+    },
+    $commandClasses
+);
+
+$out = @fopen($outfn, 'w');
+if ($out === false) {
+    $err = error_get_last();
+    $msg = $err['message'] ?? 'unknown error';
+    fwrite(STDERR, "open {$outfn}: {$msg}\n");
+    exit(2);
 }
 
-function rnd_value() {
-    // Values: strings mostly; include ints/floats too.
-    $pick = random_int(0, 9);
-    if ($pick <= 5) return rnd_string();
-    if ($pick <= 7) return rnd_int();
-    return rnd_float();
-}
-
-$out = fopen($outfn, 'w') or die("open $outfn: $!\n");
-
+$maxIndex = count($commandInstances) - 1;
 for ($i = 0; $i < $count; $i++) {
-    $cmd = $cmds[random_int(0, count($cmds)-1)];
-    $args = [];
-
-    switch ($cmd) {
-    case "SET":
-    case "SETNX":
-    case "GETSET":
-    case "APPEND":
-        $args = [rnd_scalar_key(), rnd_value()];
-        break;
-
-    case "SETEX":
-        $args = [rnd_scalar_key(), (string)random_int(1, 3600), rnd_value()];
-        break;
-
-    case "GET":
-    case "DEL":
-    case "EXISTS":
-    case "INCR":
-    case "DECR":
-    case "HGET":
-    case "HDEL":
-    case "TTL":
-    case "PERSIST":
-    case "LLEN":
-    case "SCARD":
-    case "SMEMBERS":
-    case "ZCARD":
-        $args = [rnd_scalar_key()];
-        break;
-
-    case "EXPIRE":
-        $args = [rnd_scalar_key(), (string)random_int(1, 3600)];
-        break;
-
-    case "INCRBY":
-    case "DECRBY":
-        $args = [rnd_scalar_key(), (string)random_int(1, 1000)];
-        break;
-
-    case "INCRBYFLOAT":
-        $args = [rnd_scalar_key(), (string)rnd_float()];
-        break;
-
-    case "HSET":
-    case "HSETNX":
-        // Single field form to keep JSON as a flat array.
-        $args = [rnd_scalar_key(), rnd_scalar_field(), rnd_value()];
-        break;
-
-    case "HINCRBY":
-        $delta = random_int(-100, 100);
-        if ($delta === 0) $delta = 1;
-        $args = [rnd_scalar_key(), rnd_scalar_field(), (string)$delta];
-        break;
-
-    case "HINCRBYFLOAT":
-        $delta = rnd_float();
-        if ($delta == 0.0) $delta = 0.5;
-        $args = [rnd_scalar_key(), rnd_scalar_field(), (string)$delta];
-        break;
-
-    case "LPUSH":
-    case "RPUSH":
-        $k = rnd_scalar_key();
-        $vals = [];
-        for ($j = 0; $j < random_int(1, 4); $j++) $vals[] = rnd_value();
-        $args = array_merge([$k], $vals);
-        break;
-
-    case "LPOP":
-    case "RPOP":
-        $args = [rnd_scalar_key()];
-        break;
-
-    case "LINDEX":
-        $args = [rnd_scalar_key(), (string)random_int(-10, 50)];
-        break;
-
-    case "LRANGE":
-        $args = [rnd_scalar_key(),
-                 (string)random_int(0, 2),
-                 (string)random_int(3, 12)];
-        break;
-
-    case "LREM":
-        $args = [
-            rnd_scalar_key(),
-            (string)random_int(-3, 3),
-            rnd_value()
-        ];
-        break;
-
-    case "LTRIM":
-        $start = random_int(0, 5);
-        $stop = $start + random_int(0, 10);
-        $args = [rnd_scalar_key(), (string)$start, (string)$stop];
-        break;
-
-    case "RPOPLPUSH":
-        $args = [rnd_scalar_key(), rnd_scalar_key()];
-        break;
-
-    case "SADD":
-    case "SREM":
-        $k = rnd_scalar_key();
-        $vals = [];
-        for ($j = 0; $j < random_int(1, 5); $j++) $vals[] = rnd_value();
-        $args = array_merge([$k], $vals);
-        break;
-
-    case "SISMEMBER":
-        $args = [rnd_scalar_key(), rnd_value()];
-        break;
-
-    case "HMGET":
-        $n = random_int(1, 20);
-        $fields = [];
-        for ($j = 0; $j < $n; $j++)
-            $fields[] = rnd_scalar_field();
-        $args = array_merge([rnd_scalar_key()], $fields);
-        break;
-
-    case "HMSET":
-        $n = random_int(1, 10);
-        $pairs = [];
-        for ($j = 0; $j < $n; $j++) {
-            $pairs[] = rnd_scalar_field();
-            $pairs[] = rnd_value();
-        }
-        $args = array_merge([rnd_scalar_key()], $pairs);
-        break;
-
-    case "HGETALL":
-        $args = [rnd_scalar_key()];
-        break;
-
-    case "ZADD":
-        // ZADD key score member; member can be any value string/int/float.
-        $args = [rnd_scalar_key(),
-                 (string)random_int(-1000, 1000),
-                 rnd_value()];
-        break;
-
-    case "ZRANGE":
-        $args = [rnd_scalar_key(), "0", "-1"];
-        break;
-
-    case "ZRANGEBYSCORE":
-        $key = rnd_scalar_key();
-        $min = random_int(-1000, 0);
-        $max = random_int($min, $min + 1000);
-        $args = [$key, (string)$min, (string)$max];
-        if (random_int(0, 1) === 1) {
-            $args[] = "WITHSCORES";
-        }
-        break;
-
-    case "ZRANK":
-    case "ZSCORE":
-        $args = [rnd_scalar_key(), rnd_value()];
-        break;
-
-    case "ZREM":
-        $args = [rnd_scalar_key(), rnd_value()];
-        break;
-
-    case "ZINCRBY":
-        $delta = rnd_float();
-        if ($delta == 0.0) $delta = 0.5;
-        $args = [rnd_scalar_key(), $delta, rnd_value()];
-        break;
-
-    case "MGET":
-        $n = random_int(1, 5);
-        $keys = [];
-        for ($j = 0; $j < $n; $j++) $keys[] = rnd_scalar_key();
-        $args = $keys;
-        break;
-
-    case "MSET":
-        // Flat pair list (k1, v1, k2, v2, ...) with typed keys+values.
-        $n = random_int(1, 4);
-        $pairs = [];
-        for ($j = 0; $j < $n; $j++) {
-            $pairs[] = rnd_scalar_key();
-            $pairs[] = rnd_value();
-        }
-        $args = $pairs;
-        break;
-
-    default:
-        $args = [rnd_scalar_key()];
-    }
-
-    // NOTE: JSON must be UTF-8; we avoid raw binary. Mixed ints/floats
-    // and strings are kept as native JSON types to preserve coercion.
-    $line = json_encode(array_merge([$cmd], $args));
+    /** @var Command $command */
+    $command = $commandInstances[random_int(0, $maxIndex)];
+    $line = json_encode($command->buildCommand());
     fwrite($out, $line . "\n");
 }
 
