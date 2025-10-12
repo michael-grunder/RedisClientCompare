@@ -73,7 +73,12 @@ foreach ([$generator, $runner, $comparator] as $binary) {
 }
 
 $workDir = buildWorkDir();
-register_shutdown_function(static function () use ($workDir): void {
+$cleanupWorkDir = true;
+register_shutdown_function(static function () use ($workDir, &$cleanupWorkDir): void {
+    if (!$cleanupWorkDir) {
+        return;
+    }
+
     $iterator = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($workDir, FilesystemIterator::SKIP_DOTS),
         RecursiveIteratorIterator::CHILD_FIRST
@@ -220,6 +225,7 @@ while (true) {
     $totalCommands += $commandCount;
 
     if ($compareExitCode !== 0) {
+        $cleanupWorkDir = false;
         logError('Diff found', [
             'iter' => number_format($iteration),
             'cmdfile' => $commandsFile,
@@ -238,6 +244,8 @@ while (true) {
         'runs' => number_format($totalRuns),
         'cmds' => number_format($totalCommands),
     ]);
+
+    cleanupIterationFiles($commandsFile, $outputOld, $outputNew);
 
     $iteration++;
 
@@ -282,6 +290,20 @@ function buildWorkDir(): string
     }
 
     return $work;
+}
+
+/**
+ * @param string ...$files
+ */
+function cleanupIterationFiles(string ...$files): void
+{
+    foreach ($files as $file) {
+        if ($file === '' || !is_file($file)) {
+            continue;
+        }
+
+        @unlink($file);
+    }
 }
 
 /**
