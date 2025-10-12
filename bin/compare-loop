@@ -10,30 +10,30 @@ require __DIR__ . '/../vendor/autoload.php';
 
 ini_set('display_errors', 'stderr');
 
-$options = getopt('', [
+$opt = getopt('', [
     'old:',
     'new:',
-    'iters::',
-    'sleep::',
-    'count::',
-    'host::',
-    'port::',
-    'loglevel::',
+    'iters:',
+    'sleep:',
+    'count:',
+    'host:',
+    'port:',
+    'loglevel:',
 ]);
 
-if (!isset($options['old'], $options['new'])) {
+if (!isset($opt['old'], $opt['new'])) {
     usage();
     exit(2);
 }
 
-$phpOld = $options['old'];
-$phpNew = $options['new'];
-$iterations = (int) ($options['iters'] ?? 0);
-$sleepSeconds = (int) ($options['sleep'] ?? 0);
-$commandCount = (int) ($options['count'] ?? 200);
-$host = $options['host'] ?? '127.0.0.1';
-$port = (int) ($options['port'] ?? 6379);
-$logLevel = normalizeLogLevel((string) ($options['loglevel'] ?? 'info'));
+$phpOld = $opt['old'];
+$phpNew = $opt['new'];
+$iterations = (int) ($opt['iters'] ?? 0);
+$sleepSeconds = (int) ($opt['sleep'] ?? 0);
+$commandCount = (int) ($opt['count'] ?? 200);
+$host = $opt['host'] ?? '127.0.0.1';
+$port = (int) ($opt['port'] ?? 6379);
+$logLevel = normalizeLogLevel((string) ($opt['loglevel'] ?? 'info'));
 
 try {
     $logger = LoggerFactory::create($logLevel);
