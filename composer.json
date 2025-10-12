@@ -8,6 +8,12 @@
             "Michaelgrunder\\RedisClientCompare\\": "src/"
         }
     },
+    "bin": [
+        "bin/gen-commands",
+        "bin/run-commands",
+        "bin/compare-outputs",
+        "bin/compare-loop"
+    ],
     "authors": [
         {
             "name": "michael-grunder",

@@ -1,0 +1,185 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require __DIR__ . '/../vendor/autoload.php';
+
+ini_set('display_errors', 'stderr');
+
+$options = getopt('', [
+    'old:',
+    'new:',
+    'iters::',
+    'sleep::',
+    'count::',
+    'host::',
+    'port::',
+]);
+
+if (!isset($options['old'], $options['new'])) {
+    usage();
+    exit(2);
+}
+
+$phpOld = $options['old'];
+$phpNew = $options['new'];
+$iterations = (int) ($options['iters'] ?? 0);
+$sleepSeconds = (int) ($options['sleep'] ?? 0);
+$commandCount = (int) ($options['count'] ?? 200);
+$host = $options['host'] ?? '127.0.0.1';
+$port = (int) ($options['port'] ?? 6379);
+
+$generator = __DIR__ . '/gen-commands';
+$runner = __DIR__ . '/run-commands';
+$comparator = __DIR__ . '/compare-outputs';
+
+$oldVersion = getRedisVersion($phpOld);
+$newVersion = getRedisVersion($phpNew);
+
+foreach ([$generator, $runner, $comparator] as $binary) {
+    if (!is_file($binary)) {
+        fwrite(STDERR, "Missing binary: {$binary}\n");
+        exit(2);
+    }
+}
+
+$workDir = buildWorkDir();
+register_shutdown_function(static function () use ($workDir): void {
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($workDir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+
+    foreach ($iterator as $file) {
+        $filename = $file->getPathname();
+        $file->isDir() ? @rmdir($filename) : @unlink($filename);
+    }
+
+    @rmdir($workDir);
+});
+
+printf(
+    "Comparing phpredis %s (php: %s) vs %s (php: %s)\n",
+    $oldVersion ?: 'N/A',
+    $phpOld,
+    $newVersion ?: 'N/A',
+    $phpNew
+);
+
+$iteration = 0;
+while (true) {
+    if ($iterations > 0 && $iteration >= $iterations) {
+        printf("completed %d iterations; no diffs found\n", $iteration);
+        exit(0);
+    }
+
+    $commandsFile = sprintf('%s/cmds.%d.jsonl', $workDir, $iteration);
+    $outputOld = sprintf('%s/out_old.%d.jsonl', $workDir, $iteration);
+    $outputNew = sprintf('%s/out_new.%d.jsonl', $workDir, $iteration);
+
+    $cmd = sprintf(
+        '%s %s %d %s',
+        escapeshellarg(PHP_BINARY),
+        escapeshellarg($generator),
+        $commandCount,
+        escapeshellarg($commandsFile)
+    );
+    if (runCommand($cmd) !== 0) {
+        fwrite(STDERR, "gen-commands failed\n");
+        exit(3);
+    }
+
+    $cmd = sprintf(
+        '%s %s %s %s %s %d',
+        escapeshellarg($phpOld),
+        escapeshellarg($runner),
+        escapeshellarg($commandsFile),
+        escapeshellarg($outputOld),
+        escapeshellarg($host),
+        $port
+    );
+    if (runCommand($cmd) !== 0) {
+        fwrite(STDERR, "run-commands failed for php-old\n");
+        exit(4);
+    }
+
+    $cmd = sprintf(
+        '%s %s %s %s %s %d',
+        escapeshellarg($phpNew),
+        escapeshellarg($runner),
+        escapeshellarg($commandsFile),
+        escapeshellarg($outputNew),
+        escapeshellarg($host),
+        $port
+    );
+    if (runCommand($cmd) !== 0) {
+        fwrite(STDERR, "run-commands failed for php-new\n");
+        exit(5);
+    }
+
+    $cmd = sprintf(
+        '%s %s %s %s',
+        escapeshellarg(PHP_BINARY),
+        escapeshellarg($comparator),
+        escapeshellarg($outputOld),
+        escapeshellarg($outputNew)
+    );
+    if (runCommand($cmd) !== 0) {
+        echo "DIFFERENCE FOUND on iteration {$iteration}\n";
+        echo "commands: {$commandsFile}\n";
+        echo "out-old:  {$outputOld}\n";
+        echo "out-new:  {$outputNew}\n";
+        exit(1);
+    }
+
+    printf("iter %d: OK\n", $iteration);
+    $iteration++;
+
+    if ($sleepSeconds > 0) {
+        sleep($sleepSeconds);
+    }
+}
+
+function usage(): void
+{
+    fwrite(
+        STDERR,
+        <<<TXT
+Usage: compare-loop --old=/path/php-old --new=/path/php-new
+  [--iters=0] [--sleep=0] [--count=200] [--host=127.0.0.1] [--port=6379]
+TXT
+    );
+}
+
+function getRedisVersion(string $phpBinary): string
+{
+    return (string) shell_exec(
+        sprintf(
+            '%s -r %s',
+            escapeshellarg($phpBinary),
+            escapeshellarg("echo phpversion('redis');")
+        )
+    );
+}
+
+function buildWorkDir(): string
+{
+    $work = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) .
+        DIRECTORY_SEPARATOR .
+        'phpredis_diff_' .
+        getmypid();
+
+    if (!mkdir($work, 0700) && !is_dir($work)) {
+        fwrite(STDERR, "Failed to mkdir {$work}\n");
+        exit(2);
+    }
+
+    return $work;
+}
+
+function runCommand(string $command): int
+{
+    passthru($command, $code);
+    return (int) $code;
+}

@@ -1,0 +1,23 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Michaelgrunder\RedisClientCompare\Generator\CommandFileGenerator;
+
+require __DIR__ . '/../vendor/autoload.php';
+
+if ($argc < 3) {
+    fwrite(STDERR, "Usage: gen-commands <count> <out.jsonl>\n");
+    exit(2);
+}
+
+$count = (int) $argv[1];
+$outputFile = $argv[2];
+
+try {
+    (new CommandFileGenerator())->generate($count, $outputFile);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage() . PHP_EOL);
+    exit(1);
+}

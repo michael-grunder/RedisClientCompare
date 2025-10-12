@@ -1,0 +1,52 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Michaelgrunder\RedisClientCompare\Comparator\CommandComparator;
+
+require __DIR__ . '/../vendor/autoload.php';
+
+if ($argc < 3) {
+    fwrite(STDERR, "Usage: compare-outputs <a.jsonl> <b.jsonl>\n");
+    exit(2);
+}
+
+$fileA = $argv[1];
+$fileB = $argv[2];
+
+try {
+    $result = (new CommandComparator())->compare($fileA, $fileB);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage() . PHP_EOL);
+    exit(1);
+}
+
+if ($result->isIdentical()) {
+    echo "IDENTICAL\n";
+    exit(0);
+}
+
+$index = $result->getIndex() ?? -1;
+$recordA = $result->getRecordA();
+$recordB = $result->getRecordB();
+$message = $result->getMessage() ?? 'unknown';
+
+if ($message === 'DIFFERENT LENGTH') {
+    printf("DIFFERENT LENGTH at cmd index %d\n", $index);
+} else {
+    printf("DIFFER at cmd index %d\n", $index);
+    printf("COMMAND: %s\n", $message);
+}
+
+if ($recordA !== null) {
+    echo "--- run A ---\n";
+    echo json_encode($recordA, JSON_PRETTY_PRINT) . PHP_EOL;
+}
+
+if ($recordB !== null) {
+    echo "--- run B ---\n";
+    echo json_encode($recordB, JSON_PRETTY_PRINT) . PHP_EOL;
+}
+
+exit(1);

@@ -1,0 +1,25 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Michaelgrunder\RedisClientCompare\Runner\CommandRunner;
+
+require __DIR__ . '/../vendor/autoload.php';
+
+if ($argc < 3) {
+    fwrite(STDERR, "Usage: run-commands <commands.jsonl> <out.jsonl> [host] [port]\n");
+    exit(2);
+}
+
+$commandsFile = $argv[1];
+$outputFile = $argv[2];
+$host = $argv[3] ?? '127.0.0.1';
+$port = isset($argv[4]) ? (int) $argv[4] : 6379;
+
+try {
+    (new CommandRunner())->run($commandsFile, $outputFile, $host, $port);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage() . PHP_EOL);
+    exit(1);
+}
