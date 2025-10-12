@@ -1,0 +1,72 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Michaelgrunder\RedisClientCompare\Command\CommandRegistry;
+
+require __DIR__ . '/../vendor/autoload.php';
+
+$host = $argv[1] ?? 'localhost';
+$port = isset($argv[2]) ? (int) $argv[2] : 6379;
+
+$redis = new \Redis();
+
+try {
+    $redis->connect($host, $port);
+} catch (\RedisException $exception) {
+    fwrite(STDERR, sprintf(
+        "Failed to connect to Redis at %s:%d: %s\n",
+        $host,
+        $port,
+        $exception->getMessage()
+    ));
+    exit(1);
+}
+
+$info = $redis->info();
+$version = 'unknown';
+if (is_array($info)) {
+    $version = $info['redis_version']
+        ?? ($info['Server']['redis_version'] ?? 'unknown');
+}
+
+$commandResponse = $redis->command();
+if (!is_array($commandResponse)) {
+    fwrite(STDERR, "Redis returned an unexpected response to the COMMAND command.\n");
+    exit(1);
+}
+
+$redisCommands = [];
+foreach ($commandResponse as $command) {
+    if (isset($command[0]) && is_string($command[0])) {
+        $redisCommands[] = strtoupper($command[0]);
+    }
+}
+
+$redisCommands = array_values(array_unique($redisCommands));
+sort($redisCommands, SORT_STRING);
+
+$registry = new CommandRegistry();
+$implementedCommands = [];
+foreach ($registry->createInstances() as $instance) {
+    $name = strtoupper($instance->getName());
+    if ($name !== '') {
+        $implementedCommands[] = $name;
+    }
+}
+$implementedCommands = array_values(array_unique($implementedCommands));
+sort($implementedCommands, SORT_STRING);
+
+$missing = array_values(array_diff($redisCommands, $implementedCommands));
+
+printf("Redis version: %s\n", $version);
+
+if (count($missing) === 0) {
+    echo "All Redis commands implemented in src/Command.\n";
+    exit(0);
+}
+
+foreach ($missing as $commandName) {
+    echo $commandName . "\n";
+}
