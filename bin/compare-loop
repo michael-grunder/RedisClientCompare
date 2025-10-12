@@ -61,14 +61,13 @@ register_shutdown_function(static function () use ($workDir): void {
 });
 
 logInfo(
-    'Starting compare loop',
+    'Loop start',
     [
-        'php_old' => $phpOld,
-        'php_new' => $phpNew,
-        'redis_old' => $oldVersion ?: 'N/A',
-        'redis_new' => $newVersion ?: 'N/A',
-        'command_batch' => $commandCount,
-        'iterations' => $iterations > 0 ? $iterations : '∞',
+        'old' => $phpOld,
+        'new' => $phpNew,
+        'redis' => sprintf('%s->%s', $oldVersion ?: 'N/A', $newVersion ?: 'N/A'),
+        'batch' => number_format($commandCount),
+        'iters' => $iterations > 0 ? number_format($iterations) : '∞',
     ]
 );
 
@@ -87,9 +86,9 @@ while (true) {
     $outputNew = sprintf('%s/out_new.%d.jsonl', $workDir, $iteration);
     $iterationStart = microtime(true);
 
-    logInfo('Iteration started', [
-        'iteration' => $iteration,
-        'command_batch' => $commandCount,
+    logInfo('Iter start', [
+        'iter' => number_format($iteration),
+        'batch' => number_format($commandCount),
     ]);
 
     $cmd = sprintf(
@@ -100,7 +99,7 @@ while (true) {
         escapeshellarg($commandsFile)
     );
     if (runCommand($cmd) !== 0) {
-        logError('gen-commands failed', ['iteration' => $iteration]);
+        logError('gen-commands failed', ['iter' => number_format($iteration)]);
         logSummary('gen-commands-failed', $totalRuns, $totalCommands, $startTime);
         exit(3);
     }
@@ -115,7 +114,7 @@ while (true) {
         $port
     );
     if (runCommand($cmd) !== 0) {
-        logError('run-commands failed', ['variant' => 'php-old', 'iteration' => $iteration]);
+        logError('run-commands failed', ['bin' => 'php-old', 'iter' => number_format($iteration)]);
         logSummary('run-commands-failed', $totalRuns, $totalCommands, $startTime);
         exit(4);
     }
@@ -130,7 +129,7 @@ while (true) {
         $port
     );
     if (runCommand($cmd) !== 0) {
-        logError('run-commands failed', ['variant' => 'php-new', 'iteration' => $iteration]);
+        logError('run-commands failed', ['bin' => 'php-new', 'iter' => number_format($iteration)]);
         logSummary('run-commands-failed', $totalRuns, $totalCommands, $startTime);
         exit(5);
     }
@@ -148,22 +147,22 @@ while (true) {
     $totalCommands += $commandCount;
 
     if ($compareExitCode !== 0) {
-        logError('Difference detected', [
-            'iteration' => $iteration,
-            'commands_file' => $commandsFile,
-            'out_old' => $outputOld,
-            'out_new' => $outputNew,
-            'iteration_duration' => formatDuration(microtime(true) - $iterationStart),
+        logError('Diff found', [
+            'iter' => number_format($iteration),
+            'cmdfile' => $commandsFile,
+            'old' => $outputOld,
+            'new' => $outputNew,
+            'dur' => formatDuration(microtime(true) - $iterationStart),
         ]);
         logSummary('difference-detected', $totalRuns, $totalCommands, $startTime);
         exit(1);
     }
 
-    logInfo('Iteration passed', [
-        'iteration' => $iteration,
-        'iteration_duration' => formatDuration(microtime(true) - $iterationStart),
-        'total_runs' => $totalRuns,
-        'total_commands' => $totalCommands,
+    logInfo('Iter ok', [
+        'iter' => number_format($iteration),
+        'dur' => formatDuration(microtime(true) - $iterationStart),
+        'runs' => number_format($totalRuns),
+        'cmds' => number_format($totalCommands),
     ]);
 
     $iteration++;
@@ -256,11 +255,11 @@ function formatContext(array $context): string
 
 function logSummary(string $status, int $totalRuns, int $totalCommands, float $startTime): void
 {
-    logInfo('Run summary', [
+    logInfo('Summary', [
         'status' => $status,
-        'runs' => $totalRuns,
-        'commands' => $totalCommands,
-        'elapsed' => formatDuration(microtime(true) - $startTime),
+        'runs' => number_format($totalRuns),
+        'cmds' => number_format($totalCommands),
+        'time' => formatDuration(microtime(true) - $startTime),
     ]);
 }
 
