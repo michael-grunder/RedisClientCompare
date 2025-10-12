@@ -3,6 +3,9 @@
 
 declare(strict_types=1);
 
+use Michaelgrunder\RedisClientCompare\Logger\LoggerFactory;
+use Psr\Log\LoggerInterface;
+
 require __DIR__ . '/../vendor/autoload.php';
 
 ini_set('display_errors', 'stderr');
@@ -33,6 +36,8 @@ $port = (int) ($options['port'] ?? 6379);
 $generator = __DIR__ . '/gen-commands';
 $runner = __DIR__ . '/run-commands';
 $comparator = __DIR__ . '/compare-outputs';
+
+$logger = LoggerFactory::create();
 
 $oldVersion = getRedisVersion($phpOld);
 $newVersion = getRedisVersion($phpNew);
@@ -217,40 +222,12 @@ function runCommand(string $command): int
 
 function logInfo(string $message, array $context = []): void
 {
-    logLine('INFO', $message, $context, STDOUT);
+    logger()->info($message, $context);
 }
 
 function logError(string $message, array $context = []): void
 {
-    logLine('ERROR', $message, $context, STDERR);
-}
-
-function logLine(string $level, string $message, array $context, $stream): void
-{
-    $timestamp = (new DateTimeImmutable())->format('Y-m-d H:i:s');
-    $line = sprintf('[%s] %-5s %s', $timestamp, strtoupper($level), $message);
-
-    if ($context !== []) {
-        $line .= ' ' . formatContext($context);
-    }
-
-    fwrite($stream, $line . PHP_EOL);
-}
-
-function formatContext(array $context): string
-{
-    ksort($context);
-
-    $parts = [];
-    foreach ($context as $key => $value) {
-        if (is_float($value)) {
-            $value = rtrim(rtrim(sprintf('%.4f', $value), '0'), '.');
-        }
-
-        $parts[] = sprintf('%s=%s', $key, $value);
-    }
-
-    return implode(' ', $parts);
+    logger()->error($message, $context);
 }
 
 function logSummary(string $status, int $totalRuns, int $totalCommands, float $startTime): void
@@ -291,4 +268,12 @@ function formatDuration(float $seconds): string
     $parts[] = sprintf('%0.2fs', $seconds);
 
     return implode('', $parts);
+}
+
+function logger(): LoggerInterface
+{
+    /** @var LoggerInterface $logger */
+    global $logger;
+
+    return $logger;
 }
