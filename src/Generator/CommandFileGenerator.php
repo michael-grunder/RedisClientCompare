@@ -16,11 +16,18 @@ final class CommandFileGenerator
     ) {
     }
 
-    public function generate(int $count, string $outputPath): void
+    public function generate(
+        int $count,
+        string $outputPath,
+        int $keyCardinality = Command::DEFAULT_KEY_CARDINALITY,
+        int $memberCardinality = Command::DEFAULT_MEMBER_CARDINALITY
+    ): void
     {
         if ($count <= 0) {
             throw new RuntimeException('Count must be greater than zero.');
         }
+
+        Command::configureGenerator($keyCardinality, $memberCardinality);
 
         $commands = $this->registry->createInstances();
         if ($commands === []) {

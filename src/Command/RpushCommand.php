@@ -17,7 +17,7 @@ class RpushCommand extends KeyCommand
         $values = [];
         $count = random_int(1, 4);
         for ($i = 0; $i < $count; $i++) {
-            $values[] = $this->randomValue();
+            $values[] = $this->randomListElement();
         }
 
         return array_merge([$this->randomKey()], $values);

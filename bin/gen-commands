@@ -3,21 +3,88 @@
 
 declare(strict_types=1);
 
+use Michaelgrunder\RedisClientCompare\Command\Command;
 use Michaelgrunder\RedisClientCompare\Generator\CommandFileGenerator;
 
 require __DIR__ . '/../vendor/autoload.php';
 
-if ($argc < 3) {
-    fwrite(STDERR, "Usage: gen-commands <count> <out.jsonl>\n");
+$args = $argv;
+array_shift($args);
+
+$keyCardinality = Command::DEFAULT_KEY_CARDINALITY;
+$memberCardinality = Command::DEFAULT_MEMBER_CARDINALITY;
+
+while ($args !== [] && str_starts_with((string) ($args[0] ?? ''), '--')) {
+    $option = (string) array_shift($args);
+    if ($option === '--') {
+        break;
+    }
+
+    $value = null;
+    if (strpos($option, '=') !== false) {
+        [$name, $value] = explode('=', $option, 2);
+    } else {
+        $name = $option;
+    }
+
+    switch ($name) {
+        case '--keys':
+            $value = $value ?? ($args[0] ?? null);
+            if ($value === null) {
+                fwrite(STDERR, "--keys requires a value\n");
+                usage();
+                exit(2);
+            }
+            if ($value === ($args[0] ?? null) && $value !== null) {
+                array_shift($args);
+            }
+            $keyCardinality = (int) $value;
+            break;
+        case '--members':
+            $value = $value ?? ($args[0] ?? null);
+            if ($value === null) {
+                fwrite(STDERR, "--members requires a value\n");
+                usage();
+                exit(2);
+            }
+            if ($value === ($args[0] ?? null) && $value !== null) {
+                array_shift($args);
+            }
+            $memberCardinality = (int) $value;
+            break;
+        default:
+            fwrite(STDERR, sprintf("Unknown option '%s'\n", $name));
+            usage();
+            exit(2);
+    }
+}
+
+if ($keyCardinality < 1) {
+    fwrite(STDERR, "--keys must be >= 1\n");
     exit(2);
 }
 
-$count = (int) $argv[1];
-$outputFile = $argv[2];
+if ($memberCardinality < 1) {
+    fwrite(STDERR, "--members must be >= 1\n");
+    exit(2);
+}
+
+if (count($args) < 2) {
+    usage();
+    exit(2);
+}
+
+$count = (int) array_shift($args);
+$outputFile = (string) array_shift($args);
 
 try {
-    (new CommandFileGenerator())->generate($count, $outputFile);
+    (new CommandFileGenerator())->generate($count, $outputFile, $keyCardinality, $memberCardinality);
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage() . PHP_EOL);
     exit(1);
+}
+
+function usage(): void
+{
+    fwrite(STDERR, "Usage: gen-commands [--keys=<n>] [--members=<n>] <count> <out.jsonl>\n");
 }

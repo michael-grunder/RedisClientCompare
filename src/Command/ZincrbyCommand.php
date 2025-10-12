@@ -19,6 +19,6 @@ class ZincrbyCommand extends KeyCommand
             $delta = 0.5;
         }
 
-        return [$this->randomKey(), $delta, $this->randomValue()];
+        return [$this->randomKey(), $delta, $this->randomZsetMember()];
     }
 }

@@ -17,7 +17,7 @@ class ZaddCommand extends KeyCommand
         return [
             $this->randomKey(),
             random_int(-1000, 1000),
-            $this->randomValue(),
+            $this->randomZsetMember(),
         ];
     }
 }

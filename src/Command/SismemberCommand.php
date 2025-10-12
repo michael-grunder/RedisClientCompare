@@ -14,6 +14,6 @@ class SismemberCommand extends KeyCommand
 
     protected function generateArguments(): array
     {
-        return [$this->randomKey(), $this->randomValue()];
+        return [$this->randomKey(), $this->randomSetMember()];
     }
 }

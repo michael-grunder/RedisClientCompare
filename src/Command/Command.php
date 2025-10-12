@@ -6,8 +6,14 @@ namespace Michaelgrunder\RedisClientCompare\Command;
 
 abstract class Command
 {
+    public const DEFAULT_KEY_CARDINALITY = 128;
+    public const DEFAULT_MEMBER_CARDINALITY = 1024;
+
     protected const NAME = '';
     protected const ATTRIBUTES = [];
+
+    private static int $keyCardinality = self::DEFAULT_KEY_CARDINALITY;
+    private static int $memberCardinality = self::DEFAULT_MEMBER_CARDINALITY;
 
     /**
      * @return array{readonly?:bool,data_type?:string}
@@ -15,6 +21,30 @@ abstract class Command
     public function getAttributes(): array
     {
         return static::ATTRIBUTES;
+    }
+
+    public static function configureGenerator(int $keyCardinality, int $memberCardinality): void
+    {
+        if ($keyCardinality < 1) {
+            throw new \InvalidArgumentException('Key cardinality must be >= 1');
+        }
+
+        if ($memberCardinality < 1) {
+            throw new \InvalidArgumentException('Member cardinality must be >= 1');
+        }
+
+        self::$keyCardinality = $keyCardinality;
+        self::$memberCardinality = $memberCardinality;
+    }
+
+    public static function keyCardinality(): int
+    {
+        return self::$keyCardinality;
+    }
+
+    public static function memberCardinality(): int
+    {
+        return self::$memberCardinality;
     }
 
     public function getName(): string
@@ -105,19 +135,19 @@ abstract class Command
      */
     protected function randomScalarKey()
     {
-        $pick = random_int(0, 9);
-        if ($pick <= 4) {
-            return $this->randomString();
-        }
-        if ($pick <= 7) {
-            return $this->randomInt();
-        }
-        return $this->randomFloat();
+        $prefix = $this->keyPrefix();
+        $maxIndex = self::$keyCardinality - 1;
+
+        return sprintf('%s:%d', $prefix, random_int(0, $maxIndex));
     }
 
     protected function randomScalarField()
     {
-        return $this->randomScalarKey();
+        if ($this->shouldUseDeterministicMembers()) {
+            return $this->deterministicMemberLabel('field');
+        }
+
+        return $this->randomLegacyScalar();
     }
 
     /**
@@ -147,5 +177,67 @@ abstract class Command
             $v *= pow(10, random_int(-6, 6));
         }
         return (float) $v;
+    }
+
+    protected function randomListElement()
+    {
+        return $this->randomMemberValue('element');
+    }
+
+    protected function randomSetMember()
+    {
+        return $this->randomMemberValue('member');
+    }
+
+    protected function randomZsetMember()
+    {
+        return $this->randomMemberValue('member');
+    }
+
+    protected function keyPrefix(): string
+    {
+        $attributes = $this->getAttributes();
+
+        if (isset($attributes['data_type']) && is_string($attributes['data_type']) && $attributes['data_type'] !== '') {
+            return $attributes['data_type'];
+        }
+
+        return 'key';
+    }
+
+    protected function randomMemberValue(string $prefix)
+    {
+        if ($this->shouldUseDeterministicMembers()) {
+            return $this->deterministicMemberLabel($prefix);
+        }
+
+        return $this->randomValue();
+    }
+
+    protected function shouldUseDeterministicMembers(): bool
+    {
+        return random_int(0, 3) === 0;
+    }
+
+    protected function deterministicMemberLabel(string $prefix): string
+    {
+        $maxIndex = self::$memberCardinality - 1;
+
+        return sprintf('%s:%d', $prefix, random_int(0, $maxIndex));
+    }
+
+    /**
+     * @return int|float|string
+     */
+    protected function randomLegacyScalar()
+    {
+        $pick = random_int(0, 9);
+        if ($pick <= 4) {
+            return $this->randomString();
+        }
+        if ($pick <= 7) {
+            return $this->randomInt();
+        }
+        return $this->randomFloat();
     }
 }

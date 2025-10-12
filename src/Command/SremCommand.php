@@ -17,7 +17,7 @@ class SremCommand extends KeyCommand
         $values = [];
         $count = random_int(1, 5);
         for ($i = 0; $i < $count; $i++) {
-            $values[] = $this->randomValue();
+            $values[] = $this->randomSetMember();
         }
 
         return array_merge([$this->randomKey()], $values);

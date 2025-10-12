@@ -3,6 +3,7 @@
 
 declare(strict_types=1);
 
+use Michaelgrunder\RedisClientCompare\Command\Command;
 use Michaelgrunder\RedisClientCompare\Logger\LoggerFactory;
 use Psr\Log\LoggerInterface;
 
@@ -19,6 +20,8 @@ $opt = getopt('', [
     'host:',
     'port:',
     'loglevel:',
+    'keys:',
+    'members:',
 ]);
 
 if (!isset($opt['old'], $opt['new'])) {
@@ -34,6 +37,18 @@ $commandCount = (int) ($opt['count'] ?? 200);
 $host = $opt['host'] ?? '127.0.0.1';
 $port = (int) ($opt['port'] ?? 6379);
 $logLevel = normalizeLogLevel((string) ($opt['loglevel'] ?? 'info'));
+$keys = (int) ($opt['keys'] ?? Command::DEFAULT_KEY_CARDINALITY);
+$members = (int) ($opt['members'] ?? Command::DEFAULT_MEMBER_CARDINALITY);
+
+if ($keys < 1) {
+    fwrite(STDERR, "--keys must be >= 1\n");
+    exit(2);
+}
+
+if ($members < 1) {
+    fwrite(STDERR, "--members must be >= 1\n");
+    exit(2);
+}
 
 try {
     $logger = LoggerFactory::create($logLevel);
@@ -80,6 +95,8 @@ logInfo(
         'redis' => sprintf('%s->%s', $oldVersion ?: 'N/A', $newVersion ?: 'N/A'),
         'batch' => number_format($commandCount),
         'iters' => $iterations > 0 ? number_format($iterations) : '∞',
+        'keys' => number_format($keys),
+        'members' => number_format($members),
     ]
 );
 
@@ -108,9 +125,11 @@ while (true) {
     ]);
 
     $cmd = sprintf(
-        '%s %s %d %s',
+        '%s %s --keys=%d --members=%d %d %s',
         escapeshellarg(PHP_BINARY),
         escapeshellarg($generator),
+        $keys,
+        $members,
         $commandCount,
         escapeshellarg($commandsFile)
     );
@@ -234,7 +253,7 @@ function usage(): void
         <<<TXT
 Usage: compare-loop --old=/path/php-old --new=/path/php-new
   [--iters=0] [--sleep=0] [--count=200] [--host=127.0.0.1] [--port=6379]
-  [--loglevel=info]
+  [--loglevel=info] [--keys=128] [--members=1024]
 TXT
     );
 }
