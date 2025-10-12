@@ -7,18 +7,36 @@ use Michaelgrunder\RedisClientCompare\Runner\CommandRunner;
 
 require __DIR__ . '/../vendor/autoload.php';
 
-if ($argc < 3) {
-    fwrite(STDERR, "Usage: run-commands <commands.jsonl> <out.jsonl> [host] [port]\n");
+$aggregateMode = false;
+$arguments = [];
+
+for ($i = 1; $i < $argc; $i++) {
+    $argument = $argv[$i];
+    if ($argument === '--aggregate' || strncmp($argument, '--aggregate=', 12) === 0) {
+        $aggregateMode = true;
+        continue;
+    }
+
+    if (strncmp($argument, '--', 2) === 0) {
+        fwrite(STDERR, sprintf("Unknown option '%s'\n", $argument));
+        exit(2);
+    }
+
+    $arguments[] = $argument;
+}
+
+if (count($arguments) < 2) {
+    fwrite(STDERR, "Usage: run-commands [--aggregate] <commands.jsonl> <out.jsonl> [host] [port]\n");
     exit(2);
 }
 
-$commandsFile = $argv[1];
-$outputFile = $argv[2];
-$host = $argv[3] ?? '127.0.0.1';
-$port = isset($argv[4]) ? (int) $argv[4] : 6379;
+$commandsFile = $arguments[0];
+$outputFile = $arguments[1];
+$host = $arguments[2] ?? '127.0.0.1';
+$port = isset($arguments[3]) ? (int) $arguments[3] : 6379;
 
 try {
-    (new CommandRunner())->run($commandsFile, $outputFile, $host, $port);
+    (new CommandRunner())->run($commandsFile, $outputFile, $host, $port, $aggregateMode);
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage() . PHP_EOL);
     exit(1);

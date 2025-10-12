@@ -16,7 +16,13 @@ final class CommandRunner
     ) {
     }
 
-    public function run(string $commandsFile, string $outputFile, string $host = '127.0.0.1', int $port = 6379): void
+    public function run(
+        string $commandsFile,
+        string $outputFile,
+        string $host = '127.0.0.1',
+        int $port = 6379,
+        bool $aggregateMode = false
+    ): void
     {
         if (!extension_loaded('redis')) {
             throw new RuntimeException('The phpredis extension is not loaded.');
@@ -32,6 +38,7 @@ final class CommandRunner
         $input = new SplFileObject($commandsFile, 'r');
         $output = new SplFileObject($outputFile, 'w');
 
+        $aggregate = $aggregateMode ? $this->createAggregateState() : null;
         $meta = [
             'type' => 'meta',
             'time' => date('c'),
@@ -69,12 +76,22 @@ final class CommandRunner
             try {
                 $result = $this->redis->rawCommand(...$call);
                 $record['result'] = $this->normalize($result);
+                if ($aggregate !== null) {
+                    $this->updateAggregate($aggregate, $commandName, $result, null);
+                }
             } catch (Throwable $exception) {
                 $record['error'] = $exception->getMessage();
+                if ($aggregate !== null) {
+                    $this->updateAggregate($aggregate, $commandName, null, $record['error']);
+                }
             }
 
             $output->fwrite(json_encode($record) . PHP_EOL);
             $index++;
+        }
+
+        if ($aggregate !== null) {
+            $output->fwrite(json_encode($aggregate) . PHP_EOL);
         }
     }
 
@@ -116,5 +133,93 @@ final class CommandRunner
         }
 
         return ['_type' => 'other', 'repr' => (string) $value];
+    }
+
+    private function createAggregateState(): array
+    {
+        return [
+            'type' => 'aggregate',
+            'commands' => [],
+            'meta' => [
+                'total_string_length' => 0,
+                'total_array_length' => 0,
+            ],
+        ];
+    }
+
+    private function updateAggregate(array &$aggregate, string $commandName, mixed $result, ?string $error): void
+    {
+        if (!isset($aggregate['commands'][$commandName])) {
+            $aggregate['commands'][$commandName] = [
+                'meta' => [
+                    'total_string_length' => 0,
+                    'total_array_length' => 0,
+                ],
+            ];
+        }
+
+        if ($error !== null) {
+            $this->incrementAggregateBucket($aggregate['commands'][$commandName], 'error');
+            return;
+        }
+
+        $bucket = $this->resolveAggregateBucket($result);
+        $this->incrementAggregateBucket($aggregate['commands'][$commandName], $bucket);
+
+        if ($bucket === 'string') {
+            $length = strlen((string) $result);
+            $aggregate['meta']['total_string_length'] += $length;
+            $aggregate['commands'][$commandName]['meta']['total_string_length'] += $length;
+
+            return;
+        }
+
+        if ($bucket === 'array') {
+            $length = is_countable($result) ? count($result) : 0;
+            $aggregate['meta']['total_array_length'] += $length;
+            $aggregate['commands'][$commandName]['meta']['total_array_length'] += $length;
+        }
+    }
+
+    private function incrementAggregateBucket(array &$commandAggregate, string $bucket): void
+    {
+        if (!isset($commandAggregate[$bucket])) {
+            $commandAggregate[$bucket] = 0;
+        }
+
+        $commandAggregate[$bucket]++;
+    }
+
+    private function resolveAggregateBucket(mixed $value): string
+    {
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        if ($value === null) {
+            return 'null';
+        }
+
+        if (is_int($value)) {
+            return 'int';
+        }
+
+        if (is_float($value)) {
+            return 'float';
+        }
+
+        if (is_string($value)) {
+            return 'string';
+        }
+
+        if (is_array($value)) {
+            return 'array';
+        }
+
+        if (is_object($value)) {
+            return 'object';
+        }
+
+        return 'other';
     }
 }
