@@ -87,6 +87,10 @@ $iteration = 0;
 $totalRuns = 0;
 $totalCommands = 0;
 $startTime = microtime(true);
+$commandStats = [];
+$lastAlwaysFalseWarningCommands = [];
+$lastAlwaysFalseWarningIteration = -1;
+$alwaysFalseWarningInterval = 25;
 while (true) {
     if ($iterations > 0 && $iteration >= $iterations) {
         logSummary('completed', $totalRuns, $totalCommands, $startTime);
@@ -172,6 +176,16 @@ while (true) {
         logSummary('run-commands-failed', $totalRuns, $totalCommands, $startTime);
         exit(5);
     }
+
+    updateAlwaysFalseStats($outputOld, $commandStats, $iteration);
+    updateAlwaysFalseStats($outputNew, $commandStats, $iteration);
+    maybeWarnAlwaysFalseCommands(
+        $commandStats,
+        $lastAlwaysFalseWarningCommands,
+        $lastAlwaysFalseWarningIteration,
+        $iteration,
+        $alwaysFalseWarningInterval
+    );
 
     $cmd = sprintf(
         '%s %s %s %s',
@@ -285,6 +299,11 @@ function logDebug(string $message, array $context = []): void
     logger()->debug($message, $context);
 }
 
+function logWarning(string $message, array $context = []): void
+{
+    logger()->warning($message, $context);
+}
+
 function logError(string $message, array $context = []): void
 {
     logger()->error($message, $context);
@@ -396,6 +415,142 @@ function formatDuration(float $seconds): string
     $parts[] = sprintf('%0.2fs', $seconds);
 
     return implode('', $parts);
+}
+
+/**
+ * @param array<string, array{only_false:bool,count:int,false_count:int,first_iter:int,last_iter:int}> $stats
+ */
+function updateAlwaysFalseStats(string $path, array &$stats, int $iteration): void
+{
+    if (!is_readable($path)) {
+        return;
+    }
+
+    $handle = @fopen($path, 'rb');
+    if ($handle === false) {
+        logDebug('Failed to open output file for tracking', ['path' => $path]);
+        return;
+    }
+
+    while (($line = fgets($handle)) !== false) {
+        $line = trim($line);
+        if ($line === '') {
+            continue;
+        }
+
+        $record = json_decode($line, true);
+        if (!is_array($record) || (($record['type'] ?? '') === 'meta')) {
+            continue;
+        }
+
+        $command = $record['cmd'] ?? null;
+        if (!is_string($command) || $command === '') {
+            continue;
+        }
+
+        if (!array_key_exists($command, $stats)) {
+            $stats[$command] = [
+                'only_false' => true,
+                'count' => 0,
+                'false_count' => 0,
+                'first_iter' => $iteration,
+                'last_iter' => $iteration,
+            ];
+        } else {
+            $stats[$command]['last_iter'] = $iteration;
+        }
+
+        $stats[$command]['count']++;
+
+        if (($record['error'] ?? null) !== null) {
+            $stats[$command]['only_false'] = false;
+            continue;
+        }
+
+        $result = $record['result'] ?? null;
+        if (
+            is_array($result) &&
+            ($result['_type'] ?? null) === 'bool' &&
+            array_key_exists('v', $result) &&
+            $result['v'] === false
+        ) {
+            $stats[$command]['false_count']++;
+            continue;
+        }
+
+        $stats[$command]['only_false'] = false;
+    }
+
+    fclose($handle);
+}
+
+/**
+ * @param array<string, array{only_false:bool,count:int,false_count:int,first_iter:int,last_iter:int}> $stats
+ * @param list<string> $lastWarnedCommands
+ */
+function maybeWarnAlwaysFalseCommands(
+    array $stats,
+    array &$lastWarnedCommands,
+    int &$lastWarningIteration,
+    int $iteration,
+    int $interval
+): void {
+    $candidates = [];
+    foreach ($stats as $command => $info) {
+        if ($info['only_false'] && $info['false_count'] > 0) {
+            $candidates[$command] = $info;
+        }
+    }
+
+    if ($candidates === []) {
+        $lastWarnedCommands = [];
+        $lastWarningIteration = -1;
+        return;
+    }
+
+    $names = array_keys($candidates);
+    sort($names);
+
+    $shouldLog = $names !== $lastWarnedCommands;
+    if (!$shouldLog && $interval > 0 && $lastWarningIteration >= 0) {
+        $shouldLog = ($iteration - $lastWarningIteration) >= $interval;
+    } elseif (!$shouldLog && $lastWarningIteration < 0) {
+        $shouldLog = true;
+    }
+
+    if (!$shouldLog) {
+        return;
+    }
+
+    $examples = [];
+    foreach ($names as $name) {
+        $examples[] = sprintf(
+            '%s(count=%d,false=%d,first_iter=%d,last_iter=%d)',
+            $name,
+            $candidates[$name]['count'],
+            $candidates[$name]['false_count'],
+            $candidates[$name]['first_iter'],
+            $candidates[$name]['last_iter']
+        );
+
+        if (count($examples) >= 5) {
+            break;
+        }
+    }
+
+    $context = [
+        'total' => count($names),
+        'examples' => $examples,
+    ];
+
+    if (count($names) > count($examples)) {
+        $context['more'] = count($names) - count($examples);
+    }
+
+    logWarning('Commands only returning false', $context);
+
+    $lastWarnedCommands = $names;
+    $lastWarningIteration = $iteration;
 }
 
 function logger(): LoggerInterface
