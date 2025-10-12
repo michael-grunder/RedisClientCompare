@@ -19,34 +19,56 @@ if ($count <= 0) {
 }
 
 $cmds = [
+    "APPEND",
     "DECR",
+    "DECRBY",
     "DEL",
     "EXISTS",
     "EXPIRE",
     "GET",
+    "GETSET",
     "HDEL",
     "HGET",
     "HGETALL",
+    "HINCRBY",
+    "HINCRBYFLOAT",
     "HMGET",
     "HMSET",
     "HSET",
+    "HSETNX",
     "INCR",
+    "INCRBY",
+    "INCRBYFLOAT",
+    "LINDEX",
+    "LLEN",
     "LPOP",
     "LPUSH",
     "LRANGE",
+    "LREM",
+    "LTRIM",
     "MGET",
     "MSET",
     "PERSIST",
     "RPOP",
+    "RPOPLPUSH",
     "RPUSH",
     "SADD",
+    "SCARD",
     "SET",
+    "SETEX",
+    "SETNX",
+    "SISMEMBER",
     "SMEMBERS",
     "SREM",
     "TTL",
     "ZADD",
+    "ZCARD",
     "ZRANGE",
+    "ZRANGEBYSCORE",
+    "ZRANK",
     "ZREM",
+    "ZINCRBY",
+    "ZSCORE",
 ];
 
 function rnd_ascii($min, $max) {
@@ -139,7 +161,14 @@ for ($i = 0; $i < $count; $i++) {
 
     switch ($cmd) {
     case "SET":
+    case "SETNX":
+    case "GETSET":
+    case "APPEND":
         $args = [rnd_scalar_key(), rnd_value()];
+        break;
+
+    case "SETEX":
+        $args = [rnd_scalar_key(), (string)random_int(1, 3600), rnd_value()];
         break;
 
     case "GET":
@@ -149,11 +178,44 @@ for ($i = 0; $i < $count; $i++) {
     case "DECR":
     case "HGET":
     case "HDEL":
-    case "EXPIRE":
     case "TTL":
     case "PERSIST":
+    case "LLEN":
+    case "SCARD":
+    case "SMEMBERS":
+    case "ZCARD":
         $args = [rnd_scalar_key()];
-        if ($cmd === "EXPIRE") $args[] = (string)random_int(1, 3600);
+        break;
+
+    case "EXPIRE":
+        $args = [rnd_scalar_key(), (string)random_int(1, 3600)];
+        break;
+
+    case "INCRBY":
+    case "DECRBY":
+        $args = [rnd_scalar_key(), (string)random_int(1, 1000)];
+        break;
+
+    case "INCRBYFLOAT":
+        $args = [rnd_scalar_key(), (string)rnd_float()];
+        break;
+
+    case "HSET":
+    case "HSETNX":
+        // Single field form to keep JSON as a flat array.
+        $args = [rnd_scalar_key(), rnd_scalar_field(), rnd_value()];
+        break;
+
+    case "HINCRBY":
+        $delta = random_int(-100, 100);
+        if ($delta === 0) $delta = 1;
+        $args = [rnd_scalar_key(), rnd_scalar_field(), (string)$delta];
+        break;
+
+    case "HINCRBYFLOAT":
+        $delta = rnd_float();
+        if ($delta == 0.0) $delta = 0.5;
+        $args = [rnd_scalar_key(), rnd_scalar_field(), (string)$delta];
         break;
 
     case "LPUSH":
@@ -169,10 +231,32 @@ for ($i = 0; $i < $count; $i++) {
         $args = [rnd_scalar_key()];
         break;
 
+    case "LINDEX":
+        $args = [rnd_scalar_key(), (string)random_int(-10, 50)];
+        break;
+
     case "LRANGE":
         $args = [rnd_scalar_key(),
                  (string)random_int(0, 2),
                  (string)random_int(3, 12)];
+        break;
+
+    case "LREM":
+        $args = [
+            rnd_scalar_key(),
+            (string)random_int(-3, 3),
+            rnd_value()
+        ];
+        break;
+
+    case "LTRIM":
+        $start = random_int(0, 5);
+        $stop = $start + random_int(0, 10);
+        $args = [rnd_scalar_key(), (string)$start, (string)$stop];
+        break;
+
+    case "RPOPLPUSH":
+        $args = [rnd_scalar_key(), rnd_scalar_key()];
         break;
 
     case "SADD":
@@ -183,13 +267,8 @@ for ($i = 0; $i < $count; $i++) {
         $args = array_merge([$k], $vals);
         break;
 
-    case "SMEMBERS":
-        $args = [rnd_scalar_key()];
-        break;
-
-    case "HSET":
-        // Single field form to keep JSON as a flat array.
-        $args = [rnd_scalar_key(), rnd_scalar_field(), rnd_value()];
+    case "SISMEMBER":
+        $args = [rnd_scalar_key(), rnd_value()];
         break;
 
     case "HMGET":
@@ -225,8 +304,29 @@ for ($i = 0; $i < $count; $i++) {
         $args = [rnd_scalar_key(), "0", "-1"];
         break;
 
+    case "ZRANGEBYSCORE":
+        $key = rnd_scalar_key();
+        $min = random_int(-1000, 0);
+        $max = random_int($min, $min + 1000);
+        $args = [$key, (string)$min, (string)$max];
+        if (random_int(0, 1) === 1) {
+            $args[] = "WITHSCORES";
+        }
+        break;
+
+    case "ZRANK":
+    case "ZSCORE":
+        $args = [rnd_scalar_key(), rnd_value()];
+        break;
+
     case "ZREM":
         $args = [rnd_scalar_key(), rnd_value()];
+        break;
+
+    case "ZINCRBY":
+        $delta = rnd_float();
+        if ($delta == 0.0) $delta = 0.5;
+        $args = [rnd_scalar_key(), $delta, rnd_value()];
         break;
 
     case "MGET":
