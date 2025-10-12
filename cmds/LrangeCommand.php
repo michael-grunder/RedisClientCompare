@@ -14,8 +14,8 @@ class LrangeCommand extends KeyCommand
     {
         return [
             $this->randomKey(),
-            (string) random_int(0, 2),
-            (string) random_int(3, 12),
+            random_int(0, 2),
+            random_int(3, 12),
         ];
     }
 }

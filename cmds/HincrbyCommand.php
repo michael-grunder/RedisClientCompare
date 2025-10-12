@@ -17,6 +17,6 @@ class HincrbyCommand extends KeyFieldCommand
             $delta = 1;
         }
 
-        return [$this->randomKey(), $this->randomField(), (string) $delta];
+        return [$this->randomKey(), $this->randomField(), $delta];
     }
 }

@@ -12,6 +12,6 @@ class ExpireCommand extends KeyCommand
 
     protected function generateArguments(): array
     {
-        return [$this->randomKey(), (string) random_int(1, 3600)];
+        return [$this->randomKey(), random_int(1, 3600)];
     }
 }

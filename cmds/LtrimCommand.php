@@ -15,6 +15,6 @@ class LtrimCommand extends KeyCommand
         $start = random_int(0, 5);
         $stop = $start + random_int(0, 10);
 
-        return [$this->randomKey(), (string) $start, (string) $stop];
+        return [$this->randomKey(), $start, $stop];
     }
 }

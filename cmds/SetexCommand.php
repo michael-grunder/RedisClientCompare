@@ -14,7 +14,7 @@ class SetexCommand extends KeyCommand
     {
         return [
             $this->randomKey(),
-            (string) random_int(1, 3600),
+            random_int(1, 3600),
             $this->randomValue(),
         ];
     }

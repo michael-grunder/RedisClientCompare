@@ -17,6 +17,6 @@ class HincrbyfloatCommand extends KeyFieldCommand
             $delta = 0.5;
         }
 
-        return [$this->randomKey(), $this->randomField(), (string) $delta];
+        return [$this->randomKey(), $this->randomField(), $delta];
     }
 }

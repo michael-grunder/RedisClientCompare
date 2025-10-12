@@ -15,7 +15,7 @@ class ZrangebyscoreCommand extends KeyCommand
         $key = $this->randomKey();
         $min = random_int(-1000, 0);
         $max = random_int($min, $min + 1000);
-        $args = [$key, (string) $min, (string) $max];
+        $args = [$key, $min, $max];
 
         if (random_int(0, 1) === 1) {
             $args[] = 'WITHSCORES';

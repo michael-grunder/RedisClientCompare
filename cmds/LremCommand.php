@@ -14,7 +14,7 @@ class LremCommand extends KeyCommand
     {
         return [
             $this->randomKey(),
-            (string) random_int(-3, 3),
+            random_int(-3, 3),
             $this->randomValue(),
         ];
     }

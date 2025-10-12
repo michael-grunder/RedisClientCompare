@@ -12,6 +12,6 @@ class IncrbyfloatCommand extends KeyCommand
 
     protected function generateArguments(): array
     {
-        return [$this->randomKey(), (string) $this->randomFloat()];
+        return [$this->randomKey(), $this->randomFloat()];
     }
 }

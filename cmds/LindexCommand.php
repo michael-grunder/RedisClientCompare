@@ -12,6 +12,6 @@ class LindexCommand extends KeyCommand
 
     protected function generateArguments(): array
     {
-        return [$this->randomKey(), (string) random_int(-10, 50)];
+        return [$this->randomKey(), random_int(-10, 50)];
     }
 }

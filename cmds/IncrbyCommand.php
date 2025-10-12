@@ -12,6 +12,6 @@ class IncrbyCommand extends KeyCommand
 
     protected function generateArguments(): array
     {
-        return [$this->randomKey(), (string) random_int(1, 1000)];
+        return [$this->randomKey(), random_int(1, 1000)];
     }
 }
