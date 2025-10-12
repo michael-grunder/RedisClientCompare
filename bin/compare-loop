@@ -18,6 +18,7 @@ $options = getopt('', [
     'count::',
     'host::',
     'port::',
+    'loglevel::',
 ]);
 
 if (!isset($options['old'], $options['new'])) {
@@ -32,12 +33,18 @@ $sleepSeconds = (int) ($options['sleep'] ?? 0);
 $commandCount = (int) ($options['count'] ?? 200);
 $host = $options['host'] ?? '127.0.0.1';
 $port = (int) ($options['port'] ?? 6379);
+$logLevel = normalizeLogLevel((string) ($options['loglevel'] ?? 'info'));
+
+try {
+    $logger = LoggerFactory::create($logLevel);
+} catch (Throwable $exception) {
+    fwrite(STDERR, sprintf("Invalid log level '%s'\n", $logLevel));
+    exit(2);
+}
 
 $generator = __DIR__ . '/gen-commands';
 $runner = __DIR__ . '/run-commands';
 $comparator = __DIR__ . '/compare-outputs';
-
-$logger = LoggerFactory::create();
 
 $oldVersion = getRedisVersion($phpOld);
 $newVersion = getRedisVersion($phpNew);
@@ -103,8 +110,15 @@ while (true) {
         $commandCount,
         escapeshellarg($commandsFile)
     );
-    if (runCommand($cmd) !== 0) {
-        logError('gen-commands failed', ['iter' => number_format($iteration)]);
+    $generatorResult = runCommand($cmd);
+    if ($generatorResult['code'] !== 0) {
+        logError(
+            'gen-commands failed',
+            array_merge(
+                ['iter' => number_format($iteration)],
+                commandFailureContext($cmd, $generatorResult)
+            )
+        );
         logSummary('gen-commands-failed', $totalRuns, $totalCommands, $startTime);
         exit(3);
     }
@@ -118,8 +132,18 @@ while (true) {
         escapeshellarg($host),
         $port
     );
-    if (runCommand($cmd) !== 0) {
-        logError('run-commands failed', ['bin' => 'php-old', 'iter' => number_format($iteration)]);
+    $oldRunnerResult = runCommand($cmd);
+    if ($oldRunnerResult['code'] !== 0) {
+        logError(
+            'run-commands failed',
+            array_merge(
+                [
+                    'bin' => 'php-old',
+                    'iter' => number_format($iteration),
+                ],
+                commandFailureContext($cmd, $oldRunnerResult)
+            )
+        );
         logSummary('run-commands-failed', $totalRuns, $totalCommands, $startTime);
         exit(4);
     }
@@ -133,8 +157,18 @@ while (true) {
         escapeshellarg($host),
         $port
     );
-    if (runCommand($cmd) !== 0) {
-        logError('run-commands failed', ['bin' => 'php-new', 'iter' => number_format($iteration)]);
+    $newRunnerResult = runCommand($cmd);
+    if ($newRunnerResult['code'] !== 0) {
+        logError(
+            'run-commands failed',
+            array_merge(
+                [
+                    'bin' => 'php-new',
+                    'iter' => number_format($iteration),
+                ],
+                commandFailureContext($cmd, $newRunnerResult)
+            )
+        );
         logSummary('run-commands-failed', $totalRuns, $totalCommands, $startTime);
         exit(5);
     }
@@ -146,7 +180,8 @@ while (true) {
         escapeshellarg($outputOld),
         escapeshellarg($outputNew)
     );
-    $compareExitCode = runCommand($cmd);
+    $compareResult = runCommand($cmd);
+    $compareExitCode = $compareResult['code'];
 
     $totalRuns++;
     $totalCommands += $commandCount;
@@ -158,6 +193,7 @@ while (true) {
             'old' => $outputOld,
             'new' => $outputNew,
             'dur' => formatDuration(microtime(true) - $iterationStart),
+            'command' => $cmd,
         ]);
         logSummary('difference-detected', $totalRuns, $totalCommands, $startTime);
         exit(1);
@@ -184,6 +220,7 @@ function usage(): void
         <<<TXT
 Usage: compare-loop --old=/path/php-old --new=/path/php-new
   [--iters=0] [--sleep=0] [--count=200] [--host=127.0.0.1] [--port=6379]
+  [--loglevel=info]
 TXT
     );
 }
@@ -214,15 +251,38 @@ function buildWorkDir(): string
     return $work;
 }
 
-function runCommand(string $command): int
+/**
+ * @return array{code:int, output:list<string>, duration:float}
+ */
+function runCommand(string $command): array
 {
+    logDebug('Executing command', ['command' => $command]);
+
+    $start = microtime(true);
     exec($command . ' 2>&1', $output, $code);
-    return (int) $code;
+    $duration = microtime(true) - $start;
+
+    logDebug('Command completed', [
+        'command' => $command,
+        'exit_code' => (int) $code,
+        'duration' => formatDuration($duration),
+    ]);
+
+    return [
+        'code' => (int) $code,
+        'output' => $output,
+        'duration' => $duration,
+    ];
 }
 
 function logInfo(string $message, array $context = []): void
 {
     logger()->info($message, $context);
+}
+
+function logDebug(string $message, array $context = []): void
+{
+    logger()->debug($message, $context);
 }
 
 function logError(string $message, array $context = []): void
@@ -238,6 +298,74 @@ function logSummary(string $status, int $totalRuns, int $totalCommands, float $s
         'cmds' => number_format($totalCommands),
         'time' => formatDuration(microtime(true) - $startTime),
     ]);
+}
+
+/**
+ * @param array{code:int, output:list<string>, duration:float} $result
+ * @return array<string,mixed>
+ */
+function commandFailureContext(string $command, array $result): array
+{
+    $context = [
+        'command' => $command,
+        'exit_code' => $result['code'],
+        'duration' => formatDuration($result['duration']),
+    ];
+
+    $output = formatCommandOutput($result['output']);
+    if ($output !== '') {
+        $context['output'] = $output;
+    }
+
+    return $context;
+}
+
+/**
+ * @param list<string> $lines
+ */
+function formatCommandOutput(array $lines): string
+{
+    if ($lines === []) {
+        return '';
+    }
+
+    $normalized = array_values(
+        array_filter(
+            array_map(static fn(string $line): string => trim($line), $lines),
+            static fn(string $line): bool => $line !== ''
+        )
+    );
+
+    if ($normalized === []) {
+        $normalized = $lines;
+    }
+
+    $maxLines = 5;
+    $selected = array_slice($normalized, 0, $maxLines);
+    $output = implode(' | ', $selected);
+
+    $remaining = count($normalized) - count($selected);
+    if ($remaining > 0) {
+        $output .= sprintf(' (and %d more lines)', $remaining);
+    }
+
+    return $output;
+}
+
+function normalizeLogLevel(string $level): string
+{
+    $normalized = strtolower($level);
+
+    $aliases = [
+        'warn' => 'warning',
+        'err' => 'error',
+        'crit' => 'critical',
+        'fatal' => 'critical',
+        'panic' => 'alert',
+        'trace' => 'debug',
+    ];
+
+    return $aliases[$normalized] ?? $normalized;
 }
 
 function formatDuration(float $seconds): string
