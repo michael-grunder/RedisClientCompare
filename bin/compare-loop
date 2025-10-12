@@ -39,7 +39,8 @@ $newVersion = getRedisVersion($phpNew);
 
 foreach ([$generator, $runner, $comparator] as $binary) {
     if (!is_file($binary)) {
-        fwrite(STDERR, "Missing binary: {$binary}\n");
+        logError('Missing binary', ['path' => $binary]);
+        logSummary('missing-binary', 0, 0, microtime(true));
         exit(2);
     }
 }
@@ -59,24 +60,37 @@ register_shutdown_function(static function () use ($workDir): void {
     @rmdir($workDir);
 });
 
-printf(
-    "Comparing phpredis %s (php: %s) vs %s (php: %s)\n",
-    $oldVersion ?: 'N/A',
-    $phpOld,
-    $newVersion ?: 'N/A',
-    $phpNew
+logInfo(
+    'Starting compare loop',
+    [
+        'php_old' => $phpOld,
+        'php_new' => $phpNew,
+        'redis_old' => $oldVersion ?: 'N/A',
+        'redis_new' => $newVersion ?: 'N/A',
+        'command_batch' => $commandCount,
+        'iterations' => $iterations > 0 ? $iterations : '∞',
+    ]
 );
 
 $iteration = 0;
+$totalRuns = 0;
+$totalCommands = 0;
+$startTime = microtime(true);
 while (true) {
     if ($iterations > 0 && $iteration >= $iterations) {
-        printf("completed %d iterations; no diffs found\n", $iteration);
+        logSummary('completed', $totalRuns, $totalCommands, $startTime);
         exit(0);
     }
 
     $commandsFile = sprintf('%s/cmds.%d.jsonl', $workDir, $iteration);
     $outputOld = sprintf('%s/out_old.%d.jsonl', $workDir, $iteration);
     $outputNew = sprintf('%s/out_new.%d.jsonl', $workDir, $iteration);
+    $iterationStart = microtime(true);
+
+    logInfo('Iteration started', [
+        'iteration' => $iteration,
+        'command_batch' => $commandCount,
+    ]);
 
     $cmd = sprintf(
         '%s %s %d %s',
@@ -86,7 +100,8 @@ while (true) {
         escapeshellarg($commandsFile)
     );
     if (runCommand($cmd) !== 0) {
-        fwrite(STDERR, "gen-commands failed\n");
+        logError('gen-commands failed', ['iteration' => $iteration]);
+        logSummary('gen-commands-failed', $totalRuns, $totalCommands, $startTime);
         exit(3);
     }
 
@@ -100,7 +115,8 @@ while (true) {
         $port
     );
     if (runCommand($cmd) !== 0) {
-        fwrite(STDERR, "run-commands failed for php-old\n");
+        logError('run-commands failed', ['variant' => 'php-old', 'iteration' => $iteration]);
+        logSummary('run-commands-failed', $totalRuns, $totalCommands, $startTime);
         exit(4);
     }
 
@@ -114,7 +130,8 @@ while (true) {
         $port
     );
     if (runCommand($cmd) !== 0) {
-        fwrite(STDERR, "run-commands failed for php-new\n");
+        logError('run-commands failed', ['variant' => 'php-new', 'iteration' => $iteration]);
+        logSummary('run-commands-failed', $totalRuns, $totalCommands, $startTime);
         exit(5);
     }
 
@@ -125,15 +142,30 @@ while (true) {
         escapeshellarg($outputOld),
         escapeshellarg($outputNew)
     );
-    if (runCommand($cmd) !== 0) {
-        echo "DIFFERENCE FOUND on iteration {$iteration}\n";
-        echo "commands: {$commandsFile}\n";
-        echo "out-old:  {$outputOld}\n";
-        echo "out-new:  {$outputNew}\n";
+    $compareExitCode = runCommand($cmd);
+
+    $totalRuns++;
+    $totalCommands += $commandCount;
+
+    if ($compareExitCode !== 0) {
+        logError('Difference detected', [
+            'iteration' => $iteration,
+            'commands_file' => $commandsFile,
+            'out_old' => $outputOld,
+            'out_new' => $outputNew,
+            'iteration_duration' => formatDuration(microtime(true) - $iterationStart),
+        ]);
+        logSummary('difference-detected', $totalRuns, $totalCommands, $startTime);
         exit(1);
     }
 
-    printf("iter %d: OK\n", $iteration);
+    logInfo('Iteration passed', [
+        'iteration' => $iteration,
+        'iteration_duration' => formatDuration(microtime(true) - $iterationStart),
+        'total_runs' => $totalRuns,
+        'total_commands' => $totalCommands,
+    ]);
+
     $iteration++;
 
     if ($sleepSeconds > 0) {
@@ -154,13 +186,13 @@ TXT
 
 function getRedisVersion(string $phpBinary): string
 {
-    return (string) shell_exec(
+    return trim((string) shell_exec(
         sprintf(
             '%s -r %s',
             escapeshellarg($phpBinary),
             escapeshellarg("echo phpversion('redis');")
         )
-    );
+    ));
 }
 
 function buildWorkDir(): string
@@ -180,6 +212,84 @@ function buildWorkDir(): string
 
 function runCommand(string $command): int
 {
-    passthru($command, $code);
+    exec($command . ' 2>&1', $output, $code);
     return (int) $code;
+}
+
+function logInfo(string $message, array $context = []): void
+{
+    logLine('INFO', $message, $context, STDOUT);
+}
+
+function logError(string $message, array $context = []): void
+{
+    logLine('ERROR', $message, $context, STDERR);
+}
+
+function logLine(string $level, string $message, array $context, $stream): void
+{
+    $timestamp = (new DateTimeImmutable())->format('Y-m-d H:i:s');
+    $line = sprintf('[%s] %-5s %s', $timestamp, strtoupper($level), $message);
+
+    if ($context !== []) {
+        $line .= ' ' . formatContext($context);
+    }
+
+    fwrite($stream, $line . PHP_EOL);
+}
+
+function formatContext(array $context): string
+{
+    ksort($context);
+
+    $parts = [];
+    foreach ($context as $key => $value) {
+        if (is_float($value)) {
+            $value = rtrim(rtrim(sprintf('%.4f', $value), '0'), '.');
+        }
+
+        $parts[] = sprintf('%s=%s', $key, $value);
+    }
+
+    return implode(' ', $parts);
+}
+
+function logSummary(string $status, int $totalRuns, int $totalCommands, float $startTime): void
+{
+    logInfo('Run summary', [
+        'status' => $status,
+        'runs' => $totalRuns,
+        'commands' => $totalCommands,
+        'elapsed' => formatDuration(microtime(true) - $startTime),
+    ]);
+}
+
+function formatDuration(float $seconds): string
+{
+    if ($seconds < 0) {
+        $seconds = 0.0;
+    }
+
+    if ($seconds < 1) {
+        return sprintf('%dms', (int) round($seconds * 1000));
+    }
+
+    $parts = [];
+
+    $hours = (int) floor($seconds / 3600);
+    if ($hours > 0) {
+        $parts[] = $hours . 'h';
+        $seconds -= $hours * 3600;
+    }
+
+    $minutes = (int) floor($seconds / 60);
+    if ($minutes > 0) {
+        $parts[] = $minutes . 'm';
+        $seconds -= $minutes * 60;
+    }
+
+    $seconds = round($seconds, 2);
+    $parts[] = sprintf('%0.2fs', $seconds);
+
+    return implode('', $parts);
 }
