@@ -271,7 +271,7 @@ function usage(): void
         <<<TXT
 Usage: compare-loop --old=/path/php-old --new=/path/php-new
   [--iters=0] [--sleep=0] [--count=200] [--host=127.0.0.1] [--port=6379]
-  [--loglevel=info] [--keys=128] [--members=1024]
+  [--loglevel=info] [--keys=128] [--members=1024] [--cluster]
 TXT
     );
 }
