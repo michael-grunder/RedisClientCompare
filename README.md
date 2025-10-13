@@ -16,7 +16,7 @@ Install dependencies and dump the autoloader:
 composer install
 ```
 
-Generate a JSONL file of Redis commands:
+Generate a JSONL file of Redis commands (expiration-related commands are excluded by default to avoid timing-dependent noise; pass `--include-expiration` to include them):
 
 ```bash
 php bin/gen-commands 200 /tmp/commands.jsonl

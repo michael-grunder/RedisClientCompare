@@ -10,5 +10,6 @@ class TtlCommand extends KeyCommand
     protected const ATTRIBUTES = [
         'data_type' => 'generic',
         'readonly' => true,
+        'interacts_with_expiration' => true,
     ];
 }

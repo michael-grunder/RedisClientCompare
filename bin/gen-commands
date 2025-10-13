@@ -13,6 +13,7 @@ array_shift($args);
 
 $keyCardinality = Command::DEFAULT_KEY_CARDINALITY;
 $memberCardinality = Command::DEFAULT_MEMBER_CARDINALITY;
+$includeExpirationCommands = false;
 
 while ($args !== [] && str_starts_with((string) ($args[0] ?? ''), '--')) {
     $option = (string) array_shift($args);
@@ -52,6 +53,9 @@ while ($args !== [] && str_starts_with((string) ($args[0] ?? ''), '--')) {
             }
             $memberCardinality = (int) $value;
             break;
+        case '--include-expiration':
+            $includeExpirationCommands = true;
+            break;
         default:
             fwrite(STDERR, sprintf("Unknown option '%s'\n", $name));
             usage();
@@ -78,7 +82,13 @@ $count = (int) array_shift($args);
 $outputFile = (string) array_shift($args);
 
 try {
-    (new CommandFileGenerator())->generate($count, $outputFile, $keyCardinality, $memberCardinality);
+    (new CommandFileGenerator())->generate(
+        $count,
+        $outputFile,
+        $keyCardinality,
+        $memberCardinality,
+        $includeExpirationCommands
+    );
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage() . PHP_EOL);
     exit(1);
@@ -86,5 +96,8 @@ try {
 
 function usage(): void
 {
-    fwrite(STDERR, "Usage: gen-commands [--keys=<n>] [--members=<n>] <count> <out.jsonl>\n");
+    fwrite(
+        STDERR,
+        "Usage: gen-commands [--keys=<n>] [--members=<n>] [--include-expiration] <count> <out.jsonl>\n"
+    );
 }

@@ -16,11 +16,30 @@ abstract class Command
     private static int $memberCardinality = self::DEFAULT_MEMBER_CARDINALITY;
 
     /**
-     * @return array{readonly?:bool,data_type?:string}
+     * @return array{
+     *     readonly?:bool,
+     *     data_type?:string,
+     *     interacts_with_expiration?:bool,
+     *     blocking?:bool
+     * }
      */
     public function getAttributes(): array
     {
         return static::ATTRIBUTES;
+    }
+
+    public function interactsWithExpiration(): bool
+    {
+        $attributes = $this->getAttributes();
+
+        return isset($attributes['interacts_with_expiration']) && $attributes['interacts_with_expiration'] === true;
+    }
+
+    public function isBlocking(): bool
+    {
+        $attributes = $this->getAttributes();
+
+        return isset($attributes['blocking']) && $attributes['blocking'] === true;
     }
 
     public static function configureGenerator(int $keyCardinality, int $memberCardinality): void

@@ -10,5 +10,6 @@ class PersistCommand extends KeyCommand
     protected const ATTRIBUTES = [
         'data_type' => 'generic',
         'readonly' => false,
+        'interacts_with_expiration' => true,
     ];
 }

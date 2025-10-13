@@ -27,7 +27,8 @@ final class CommandFileGenerator
         int $count,
         string $outputPath,
         int $keyCardinality = Command::DEFAULT_KEY_CARDINALITY,
-        int $memberCardinality = Command::DEFAULT_MEMBER_CARDINALITY
+        int $memberCardinality = Command::DEFAULT_MEMBER_CARDINALITY,
+        bool $includeExpirationCommands = false
     ): void
     {
         if ($count <= 0) {
@@ -37,8 +38,16 @@ final class CommandFileGenerator
         Command::configureGenerator($keyCardinality, $memberCardinality);
 
         $commands = $this->registry->createInstances();
+        if (!$includeExpirationCommands) {
+            $commands = array_values(
+                array_filter(
+                    $commands,
+                    static fn (Command $command): bool => !$command->interactsWithExpiration()
+                )
+            );
+        }
         if ($commands === []) {
-            throw new RuntimeException('No command classes were discovered.');
+            throw new RuntimeException('No command classes available after applying filters.');
         }
 
         $file = new SplFileObject($outputPath, 'w');

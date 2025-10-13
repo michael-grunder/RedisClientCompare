@@ -10,6 +10,7 @@ class SetexCommand extends KeyCommand
     protected const ATTRIBUTES = [
         'data_type' => 'string',
         'readonly' => false,
+        'interacts_with_expiration' => true,
     ];
 
     protected function generateArguments(): array
