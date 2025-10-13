@@ -152,7 +152,9 @@ final class CommandRunner
      */
     private function executeCommand(string $commandName, array $args): mixed
     {
-        return match ($commandName) {
+        $normalizedCommand = strtoupper($commandName);
+
+        return match ($normalizedCommand) {
             'PIPELINE' => $this->startPipeline(),
             'MULTI' => $this->startMulti(),
             'EXEC' => $this->executeExec(),
@@ -164,8 +166,7 @@ final class CommandRunner
     private function startPipeline(): mixed
     {
         if (($this->state & self::STATE_MULTI) !== 0) {
-            // phpredis forbids entering pipeline mode once already inside MULTI.
-            return $this->redis;
+            throw new RuntimeException('Cannot start PIPELINE while inside MULTI.');
         }
 
         if (($this->state & self::STATE_PIPELINE) !== 0) {
