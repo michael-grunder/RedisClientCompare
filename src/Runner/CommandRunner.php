@@ -163,6 +163,15 @@ final class CommandRunner
 
     private function startPipeline(): mixed
     {
+        if (($this->state & self::STATE_MULTI) !== 0) {
+            // phpredis forbids entering pipeline mode once already inside MULTI.
+            return $this->redis;
+        }
+
+        if (($this->state & self::STATE_PIPELINE) !== 0) {
+            return $this->redis;
+        }
+
         $result = $this->redis->pipeline();
         $this->state |= self::STATE_PIPELINE;
 
