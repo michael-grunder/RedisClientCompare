@@ -159,21 +159,12 @@ final class CommandRunner
     {
         try {
             if ($this->clusterMode && $this->client instanceof RedisCluster) {
-                $masters = $this->client->masters();
-                foreach ($masters as $master) {
-                    if (!is_array($master)) {
-                        continue;
-                    }
-
-                    $node = $this->normalizeNodeTarget($master);
-                    if ($node[0] === '' || $node[1] <= 0) {
-                        continue;
-                    }
-
+                foreach ($this->client->_masters() as $master) {
                     try {
-                        $this->client->rawCommand($node, 'FLUSHALL');
+                        $this->client->flushDB($master);
                     } catch (Throwable) {
-                        // Ignore failures on individual nodes.
+                        throw new RuntimeException(sprintf('Failed to FLUSHDB on cluster node %s:%d',
+                            $master[0], $master[1]));
                     }
                 }
 
