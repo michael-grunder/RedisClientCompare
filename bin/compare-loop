@@ -68,6 +68,16 @@ $comparator = __DIR__ . '/compare-outputs';
 $oldVersion = getRedisVersion($phpOld);
 $newVersion = getRedisVersion($phpNew);
 
+if ($oldVersion !== '' && $newVersion !== '' && strtolower($oldVersion) === strtolower($newVersion)) {
+    logError('Identical phpredis versions detected', [
+        'php_old' => $phpOld,
+        'php_new' => $phpNew,
+        'phpredis_version' => $oldVersion,
+    ]);
+    logSummary('identical-phpredis-version', 0, 0, microtime(true));
+    exit(2);
+}
+
 foreach ([$generator, $runner, $comparator] as $binary) {
     if (!is_file($binary)) {
         logError('Missing binary', ['path' => $binary]);
