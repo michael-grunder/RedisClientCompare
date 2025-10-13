@@ -109,7 +109,7 @@ final class CommandFileGenerator
                 return [$operation];
 
             case 'MULTI':
-                if (($state & self::STATE_MULTI) !== 0) {
+                if (($state & self::STATE_MULTI) !== 0 || ($state & self::STATE_PIPELINE) !== 0) {
                     return null;
                 }
 

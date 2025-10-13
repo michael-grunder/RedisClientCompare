@@ -166,7 +166,8 @@ final class CommandRunner
     private function startPipeline(): mixed
     {
         if (($this->state & self::STATE_MULTI) !== 0) {
-            throw new RuntimeException('Cannot start PIPELINE while inside MULTI.');
+            // Skip pipeline activation when MULTI is active; phpredis forbids it.
+            return $this->redis;
         }
 
         if (($this->state & self::STATE_PIPELINE) !== 0) {

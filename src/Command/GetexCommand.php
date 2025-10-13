@@ -43,4 +43,3 @@ class GetexCommand extends KeyCommand
         return $arguments;
     }
 }
-
