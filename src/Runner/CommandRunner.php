@@ -11,8 +11,13 @@ use Throwable;
 
 final class CommandRunner
 {
+    private const STATE_ATOMIC = 0x00;
+    private const STATE_PIPELINE = 0x01;
+    private const STATE_MULTI = 0x02;
+
     public function __construct(
-        private readonly Redis $redis = new Redis()
+        private readonly Redis $redis = new Redis(),
+        private int $state = self::STATE_ATOMIC
     ) {
     }
 
@@ -34,6 +39,7 @@ final class CommandRunner
 
         $this->connect($host, $port);
         $this->flushAll();
+        $this->state = self::STATE_ATOMIC;
 
         $input = new SplFileObject($commandsFile, 'r');
         $output = new SplFileObject($outputFile, 'w');
@@ -63,7 +69,6 @@ final class CommandRunner
             }
 
             $commandName = array_shift($data);
-            $call = array_merge([$commandName], $data);
 
             $record = [
                 'index' => $index,
@@ -74,7 +79,7 @@ final class CommandRunner
             ];
 
             try {
-                $result = $this->redis->rawCommand(...$call);
+                $result = $this->executeCommand($commandName, $data);
                 $record['result'] = $this->normalize($result);
                 if ($aggregate !== null) {
                     $this->updateAggregate($aggregate, $commandName, $result, null);
@@ -119,6 +124,13 @@ final class CommandRunner
             return ['_type' => 'bool', 'v' => $value];
         }
 
+        if (is_object($value)) {
+            return [
+                '_type' => 'object',
+                'class' => $value::class,
+            ];
+        }
+
         if ($value === null || is_int($value) || is_float($value) || is_string($value)) {
             return $value;
         }
@@ -133,6 +145,70 @@ final class CommandRunner
         }
 
         return ['_type' => 'other', 'repr' => (string) $value];
+    }
+
+    /**
+     * @param array<int, mixed> $args
+     */
+    private function executeCommand(string $commandName, array $args): mixed
+    {
+        return match ($commandName) {
+            'PIPELINE' => $this->startPipeline(),
+            'MULTI' => $this->startMulti(),
+            'EXEC' => $this->executeExec(),
+            'DISCARD' => $this->executeDiscard(),
+            default => $this->redis->rawCommand($commandName, ...$args),
+        };
+    }
+
+    private function startPipeline(): mixed
+    {
+        $result = $this->redis->pipeline();
+        $this->state |= self::STATE_PIPELINE;
+
+        return $result;
+    }
+
+    private function startMulti(): mixed
+    {
+        $result = $this->redis->multi();
+        $this->state |= self::STATE_MULTI;
+
+        return $result;
+    }
+
+    private function executeExec(): mixed
+    {
+        if ($this->state === self::STATE_ATOMIC) {
+            return false;
+        }
+
+        $result = $this->redis->exec();
+
+        if (($this->state & self::STATE_MULTI) !== 0) {
+            $this->state &= ~self::STATE_MULTI;
+        } elseif (($this->state & self::STATE_PIPELINE) !== 0) {
+            $this->state &= ~self::STATE_PIPELINE;
+        }
+
+        return $result;
+    }
+
+    private function executeDiscard(): mixed
+    {
+        if ($this->state === self::STATE_ATOMIC) {
+            return false;
+        }
+
+        $result = $this->redis->discard();
+
+        if (($this->state & self::STATE_MULTI) !== 0) {
+            $this->state &= ~self::STATE_MULTI;
+        } elseif (($this->state & self::STATE_PIPELINE) !== 0) {
+            $this->state &= ~self::STATE_PIPELINE;
+        }
+
+        return $result;
     }
 
     private function createAggregateState(): array
