@@ -3,6 +3,7 @@
 
 declare(strict_types=1);
 
+use Michaelgrunder\RedisClientCompare\Logger\ExceptionFormatter;
 use Michaelgrunder\RedisClientCompare\Runner\CommandRunner;
 
 require __DIR__ . '/../vendor/autoload.php';
@@ -44,6 +45,6 @@ $port = isset($arguments[3]) ? (int) $arguments[3] : 6379;
 try {
     (new CommandRunner())->run($commandsFile, $outputFile, $host, $port, $aggregateMode, $clusterMode);
 } catch (Throwable $exception) {
-    fwrite(STDERR, $exception->getMessage() . PHP_EOL);
+    fwrite(STDERR, ExceptionFormatter::format($exception) . PHP_EOL);
     exit(1);
 }

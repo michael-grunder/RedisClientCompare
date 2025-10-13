@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Michaelgrunder\RedisClientCompare\Runner;
 
+use Michaelgrunder\RedisClientCompare\Logger\ExceptionFormatter;
 use Redis;
 use RedisCluster;
 use RuntimeException;
@@ -89,6 +90,7 @@ final class CommandRunner
                 }
             } catch (Throwable $exception) {
                 $record['error'] = $exception->getMessage();
+                $record['error_trace'] = ExceptionFormatter::format($exception);
                 if ($aggregate !== null) {
                     $this->updateAggregate($aggregate, $commandName, null, $record['error']);
                 }
@@ -144,7 +146,8 @@ final class CommandRunner
                 $this->client = $client;
             }
         } catch (Throwable $exception) {
-            throw new RuntimeException(sprintf('Failed to connect to Redis: %s', $exception->getMessage()), 0, $exception);
+            throw new RuntimeException(sprintf('Failed to connect to Redis @%s:%d: %s',
+                $host, $port, $exception->getMessage()), 0, $exception);
         }
 
         if ($this->client === null) {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 use Michaelgrunder\RedisClientCompare\Command\Command;
 use Michaelgrunder\RedisClientCompare\Generator\CommandFileGenerator;
+use Michaelgrunder\RedisClientCompare\Logger\ExceptionFormatter;
 
 require __DIR__ . '/../vendor/autoload.php';
 
@@ -95,7 +96,7 @@ try {
         $clusterMode
     );
 } catch (Throwable $exception) {
-    fwrite(STDERR, $exception->getMessage() . PHP_EOL);
+    fwrite(STDERR, ExceptionFormatter::format($exception) . PHP_EOL);
     exit(1);
 }
 

@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 use Michaelgrunder\RedisClientCompare\Command\Command;
+use Michaelgrunder\RedisClientCompare\Logger\ExceptionFormatter;
 use Michaelgrunder\RedisClientCompare\Logger\LoggerFactory;
 use Psr\Log\LoggerInterface;
 
@@ -56,6 +57,7 @@ try {
     $logger = LoggerFactory::create($logLevel);
 } catch (Throwable $exception) {
     fwrite(STDERR, sprintf("Invalid log level '%s'\n", $logLevel));
+    fwrite(STDERR, ExceptionFormatter::format($exception) . PHP_EOL);
     exit(2);
 }
 

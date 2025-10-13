@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 use Michaelgrunder\RedisClientCompare\Comparator\CommandComparator;
+use Michaelgrunder\RedisClientCompare\Logger\ExceptionFormatter;
 
 require __DIR__ . '/../vendor/autoload.php';
 
@@ -18,7 +19,7 @@ $fileB = $argv[2];
 try {
     $result = (new CommandComparator())->compare($fileA, $fileB);
 } catch (Throwable $exception) {
-    fwrite(STDERR, $exception->getMessage() . PHP_EOL);
+    fwrite(STDERR, ExceptionFormatter::format($exception) . PHP_EOL);
     exit(1);
 }
 
