@@ -23,6 +23,12 @@ class PingCommand extends Command
 
     protected function generateClusterArguments(): array
     {
-        return [$this->randomAscii(1, 30)];
+        $route = $this->randomAscii(1, 30);
+
+        if (random_int(0, 1) === 0) {
+            return [$route];
+        }
+
+        return [$route, $this->randomString()];
     }
 }

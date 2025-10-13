@@ -254,13 +254,12 @@ final class CommandRunner
             return null;
         }
 
-        if ($args === []) {
-            throw new RuntimeException(sprintf('Cluster command %s requires at least one argument.', $commandName));
+        $method = strtolower($commandName);
+        if (!method_exists($this->client, $method)) {
+            throw new RuntimeException(sprintf('RedisCluster command not supported: %s', $commandName));
         }
 
-        $route = $args[0];
-
-        return $this->client->rawCommand($route, $commandName, ...$args);
+        return $this->client->{$method}(...$args);
     }
 
     private function startPipeline(): mixed
