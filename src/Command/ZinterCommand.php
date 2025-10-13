@@ -16,5 +16,9 @@ class ZinterCommand extends ZsetCombinationCommand
     {
         return $this->buildCombinationArguments(false, true);
     }
-}
 
+    protected function generateClusterArguments(): array
+    {
+        return $this->buildClusterCombinationArguments(false, true);
+    }
+}

@@ -81,6 +81,22 @@ abstract class Command
         return array_merge([$this->getName()], $this->generateArguments());
     }
 
+    /**
+     * @return array<int, mixed>
+     */
+    public function buildClusterCommand(): array
+    {
+        return array_merge([$this->getName()], $this->generateClusterArguments());
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    protected function generateClusterArguments(): array
+    {
+        return $this->generateArguments();
+    }
+
     protected function randomAscii(int $min, int $max): string
     {
         $len = random_int($min, $max);
@@ -258,5 +274,43 @@ abstract class Command
             return $this->randomInt();
         }
         return $this->randomFloat();
+    }
+
+    protected function randomClusterSlotTag(): string
+    {
+        return $this->randomAscii(6, 16);
+    }
+
+    protected function randomClusterKey(string $tag, ?string $prefix = null): string
+    {
+        $prefix ??= $this->keyPrefix();
+        $maxIndex = self::$keyCardinality - 1;
+
+        return sprintf('%s:{%s}:%d', $prefix, $tag, random_int(0, $maxIndex));
+    }
+
+    /**
+     * @return string[]
+     */
+    protected function randomClusterKeySet(
+        int $count,
+        ?string $tag = null,
+        ?string $prefix = null,
+        bool $allowDuplicates = true
+    ): array {
+        $keys = [];
+        $tag ??= $this->randomClusterSlotTag();
+
+        while (count($keys) < $count) {
+            $candidate = $this->randomClusterKey($tag, $prefix);
+
+            if (!$allowDuplicates && in_array($candidate, $keys, true)) {
+                continue;
+            }
+
+            $keys[] = $candidate;
+        }
+
+        return $keys;
     }
 }

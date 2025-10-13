@@ -8,12 +8,18 @@ use Michaelgrunder\RedisClientCompare\Runner\CommandRunner;
 require __DIR__ . '/../vendor/autoload.php';
 
 $aggregateMode = false;
+$clusterMode = false;
 $arguments = [];
 
 for ($i = 1; $i < $argc; $i++) {
     $argument = $argv[$i];
     if ($argument === '--aggregate' || strncmp($argument, '--aggregate=', 12) === 0) {
         $aggregateMode = true;
+        continue;
+    }
+
+    if ($argument === '--cluster') {
+        $clusterMode = true;
         continue;
     }
 
@@ -26,7 +32,7 @@ for ($i = 1; $i < $argc; $i++) {
 }
 
 if (count($arguments) < 2) {
-    fwrite(STDERR, "Usage: run-commands [--aggregate] <commands.jsonl> <out.jsonl> [host] [port]\n");
+    fwrite(STDERR, "Usage: run-commands [--aggregate] [--cluster] <commands.jsonl> <out.jsonl> [host] [port]\n");
     exit(2);
 }
 
@@ -36,7 +42,7 @@ $host = $arguments[2] ?? '127.0.0.1';
 $port = isset($arguments[3]) ? (int) $arguments[3] : 6379;
 
 try {
-    (new CommandRunner())->run($commandsFile, $outputFile, $host, $port, $aggregateMode);
+    (new CommandRunner())->run($commandsFile, $outputFile, $host, $port, $aggregateMode, $clusterMode);
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage() . PHP_EOL);
     exit(1);

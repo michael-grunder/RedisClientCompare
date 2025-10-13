@@ -20,5 +20,9 @@ class PingCommand extends Command
 
         return [$this->randomString()];
     }
-}
 
+    protected function generateClusterArguments(): array
+    {
+        return [$this->randomAscii(1, 30)];
+    }
+}

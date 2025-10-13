@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Michaelgrunder\RedisClientCompare\Runner;
 
 use Redis;
+use RedisCluster;
 use RuntimeException;
 use SplFileObject;
 use Throwable;
@@ -15,18 +16,17 @@ final class CommandRunner
     private const STATE_PIPELINE = 0x01;
     private const STATE_MULTI = 0x02;
 
-    public function __construct(
-        private readonly Redis $redis = new Redis(),
-        private int $state = self::STATE_ATOMIC
-    ) {
-    }
+    private Redis|RedisCluster|null $client = null;
+    private int $state = self::STATE_ATOMIC;
+    private bool $clusterMode = false;
 
     public function run(
         string $commandsFile,
         string $outputFile,
         string $host = '127.0.0.1',
         int $port = 6379,
-        bool $aggregateMode = false
+        bool $aggregateMode = false,
+        bool $clusterMode = false
     ): void
     {
         if (!extension_loaded('redis')) {
@@ -37,6 +37,8 @@ final class CommandRunner
             throw new RuntimeException(sprintf('Commands file not readable: %s', $commandsFile));
         }
 
+        $this->clusterMode = $clusterMode;
+        $this->client = null;
         $this->connect($host, $port);
         $this->flushAll();
         $this->state = self::STATE_ATOMIC;
@@ -50,6 +52,7 @@ final class CommandRunner
             'time' => date('c'),
             'host' => $host,
             'port' => $port,
+            'cluster' => $this->clusterMode,
             'php_version' => phpversion(),
             'redis_ext_version' => phpversion('redis') ?: 'unknown',
             'sapi' => php_sapi_name(),
@@ -100,19 +103,83 @@ final class CommandRunner
         }
     }
 
+    /**
+     * @param array<int|string, mixed> $node
+     * @return array{0: string, 1: int}
+     */
+    private function normalizeNodeTarget(array $node): array
+    {
+        if (isset($node['ip'], $node['port'])) {
+            return [(string) $node['ip'], (int) $node['port']];
+        }
+
+        if (isset($node['addr'])) {
+            $parts = explode(':', (string) $node['addr'], 2);
+            $host = $parts[0] ?? '127.0.0.1';
+            $port = isset($parts[1]) ? (int) $parts[1] : 0;
+
+            return [$host, $port];
+        }
+
+        if (isset($node[0], $node[1])) {
+            return [(string) $node[0], (int) $node[1]];
+        }
+
+        if (isset($node['host'], $node['port'])) {
+            return [(string) $node['host'], (int) $node['port']];
+        }
+
+        return ['127.0.0.1', 0];
+    }
+
     private function connect(string $host, int $port): void
     {
         try {
-            $this->redis->connect($host, $port);
+            if ($this->clusterMode) {
+                $seed = sprintf('%s:%d', $host, $port);
+                $this->client = new RedisCluster(null, [$seed]);
+            } else {
+                $client = new Redis();
+                $client->connect($host, $port);
+                $this->client = $client;
+            }
         } catch (Throwable $exception) {
             throw new RuntimeException(sprintf('Failed to connect to Redis: %s', $exception->getMessage()), 0, $exception);
+        }
+
+        if ($this->client === null) {
+            throw new RuntimeException('Failed to initialize Redis client.');
         }
     }
 
     private function flushAll(): void
     {
         try {
-            $this->redis->flushAll();
+            if ($this->clusterMode && $this->client instanceof RedisCluster) {
+                $masters = $this->client->masters();
+                foreach ($masters as $master) {
+                    if (!is_array($master)) {
+                        continue;
+                    }
+
+                    $node = $this->normalizeNodeTarget($master);
+                    if ($node[0] === '' || $node[1] <= 0) {
+                        continue;
+                    }
+
+                    try {
+                        $this->client->rawCommand($node, 'FLUSHALL');
+                    } catch (Throwable) {
+                        // Ignore failures on individual nodes.
+                    }
+                }
+
+                return;
+            }
+
+            if ($this->client instanceof Redis) {
+                $this->client->flushAll();
+            }
         } catch (Throwable) {
             // Some servers restrict FLUSHALL; ignore errors.
         }
@@ -154,27 +221,61 @@ final class CommandRunner
     {
         $normalizedCommand = strtoupper($commandName);
 
+        if ($this->clusterMode) {
+            return $this->executeClusterCommand($normalizedCommand, $commandName, $args);
+        }
+
+        if (!$this->client instanceof Redis) {
+            throw new RuntimeException('Missing Redis client for command execution.');
+        }
+
         return match ($normalizedCommand) {
             'PIPELINE' => $this->startPipeline(),
             'MULTI' => $this->startMulti(),
             'EXEC' => $this->executeExec(),
             'DISCARD' => $this->executeDiscard(),
-            default => $this->redis->rawCommand($commandName, ...$args),
+            default => $this->client->rawCommand($commandName, ...$args),
         };
+    }
+
+    /**
+     * @param array<int, mixed> $args
+     */
+    private function executeClusterCommand(string $normalizedCommand, string $commandName, array $args): mixed
+    {
+        if (!$this->client instanceof RedisCluster) {
+            throw new RuntimeException('Missing RedisCluster client for command execution.');
+        }
+
+        if (in_array($normalizedCommand, ['PIPELINE', 'MULTI', 'EXEC', 'DISCARD'], true)) {
+            return null;
+        }
+
+        if ($args === []) {
+            throw new RuntimeException(sprintf('Cluster command %s requires at least one argument.', $commandName));
+        }
+
+        $route = $args[0];
+
+        return $this->client->rawCommand($route, $commandName, ...$args);
     }
 
     private function startPipeline(): mixed
     {
+        if (!$this->client instanceof Redis) {
+            return null;
+        }
+
         if (($this->state & self::STATE_MULTI) !== 0) {
             // Skip pipeline activation when MULTI is active; phpredis forbids it.
-            return $this->redis;
+            return $this->client;
         }
 
         if (($this->state & self::STATE_PIPELINE) !== 0) {
-            return $this->redis;
+            return $this->client;
         }
 
-        $result = $this->redis->pipeline();
+        $result = $this->client->pipeline();
         $this->state |= self::STATE_PIPELINE;
 
         return $result;
@@ -182,7 +283,11 @@ final class CommandRunner
 
     private function startMulti(): mixed
     {
-        $result = $this->redis->multi();
+        if (!$this->client instanceof Redis) {
+            return null;
+        }
+
+        $result = $this->client->multi();
         $this->state |= self::STATE_MULTI;
 
         return $result;
@@ -194,7 +299,11 @@ final class CommandRunner
             return false;
         }
 
-        $result = $this->redis->exec();
+        if (!$this->client instanceof Redis) {
+            return null;
+        }
+
+        $result = $this->client->exec();
 
         if (($this->state & self::STATE_MULTI) !== 0) {
             $this->state &= ~self::STATE_MULTI;
@@ -211,7 +320,11 @@ final class CommandRunner
             return false;
         }
 
-        $result = $this->redis->discard();
+        if (!$this->client instanceof Redis) {
+            return null;
+        }
+
+        $result = $this->client->discard();
 
         $this->state = self::STATE_ATOMIC;
 

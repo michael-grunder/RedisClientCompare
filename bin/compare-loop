@@ -22,6 +22,7 @@ $opt = getopt('', [
     'loglevel:',
     'keys:',
     'members:',
+    'cluster',
 ]);
 
 if (!isset($opt['old'], $opt['new'])) {
@@ -39,6 +40,7 @@ $port = (int) ($opt['port'] ?? 6379);
 $logLevel = normalizeLogLevel((string) ($opt['loglevel'] ?? 'info'));
 $keys = (int) ($opt['keys'] ?? Command::DEFAULT_KEY_CARDINALITY);
 $members = (int) ($opt['members'] ?? Command::DEFAULT_MEMBER_CARDINALITY);
+$clusterMode = array_key_exists('cluster', $opt);
 
 if ($keys < 1) {
     fwrite(STDERR, "--keys must be >= 1\n");
@@ -102,6 +104,7 @@ logInfo(
         'iters' => $iterations > 0 ? number_format($iterations) : '∞',
         'keys' => number_format($keys),
         'members' => number_format($members),
+        'cluster' => $clusterMode,
     ]
 );
 
@@ -129,12 +132,14 @@ while (true) {
         'batch' => number_format($commandCount),
     ]);
 
+    $generatorClusterOption = $clusterMode ? ' --cluster' : '';
     $cmd = sprintf(
-        '%s %s --keys=%d --members=%d %d %s',
+        '%s %s --keys=%d --members=%d%s %d %s',
         escapeshellarg(PHP_BINARY),
         escapeshellarg($generator),
         $keys,
         $members,
+        $generatorClusterOption,
         $commandCount,
         escapeshellarg($commandsFile)
     );
@@ -151,10 +156,12 @@ while (true) {
         exit(3);
     }
 
+    $runnerClusterOption = $clusterMode ? ' --cluster' : '';
     $cmd = sprintf(
-        '%s %s %s %s %s %d',
+        '%s %s%s %s %s %s %d',
         escapeshellarg($phpOld),
         escapeshellarg($runner),
+        $runnerClusterOption,
         escapeshellarg($commandsFile),
         escapeshellarg($outputOld),
         escapeshellarg($host),
@@ -177,9 +184,10 @@ while (true) {
     }
 
     $cmd = sprintf(
-        '%s %s %s %s %s %d',
+        '%s %s%s %s %s %s %d',
         escapeshellarg($phpNew),
         escapeshellarg($runner),
+        $runnerClusterOption,
         escapeshellarg($commandsFile),
         escapeshellarg($outputNew),
         escapeshellarg($host),

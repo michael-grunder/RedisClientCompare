@@ -24,5 +24,14 @@ class SunionstoreCommand extends Command
 
         return array_merge([$destination], $keys);
     }
-}
 
+    protected function generateClusterArguments(): array
+    {
+        $count = random_int(1, 5);
+        $tag = $this->randomClusterSlotTag();
+        $destination = $this->randomClusterKey($tag);
+        $keys = $this->randomClusterKeySet($count, $tag, null, false);
+
+        return array_merge([$destination], $keys);
+    }
+}

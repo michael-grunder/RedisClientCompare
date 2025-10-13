@@ -23,5 +23,11 @@ class SinterCommand extends Command
 
         return $keys;
     }
-}
 
+    protected function generateClusterArguments(): array
+    {
+        $count = random_int(1, 5);
+
+        return $this->randomClusterKeySet($count, null, null, false);
+    }
+}

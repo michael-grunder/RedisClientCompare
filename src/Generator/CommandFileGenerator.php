@@ -19,7 +19,8 @@ final class CommandFileGenerator
     private const NON_ATOMIC_OPERATIONS = ['PIPELINE', 'MULTI', 'EXEC', 'DISCARD'];
 
     public function __construct(
-        private readonly CommandRegistry $registry = new CommandRegistry()
+        private readonly CommandRegistry $registry = new CommandRegistry(),
+        private bool $clusterMode = false
     ) {
     }
 
@@ -28,13 +29,15 @@ final class CommandFileGenerator
         string $outputPath,
         int $keyCardinality = Command::DEFAULT_KEY_CARDINALITY,
         int $memberCardinality = Command::DEFAULT_MEMBER_CARDINALITY,
-        bool $includeExpirationCommands = false
+        bool $includeExpirationCommands = false,
+        bool $clusterMode = false
     ): void
     {
         if ($count <= 0) {
             throw new RuntimeException('Count must be greater than zero.');
         }
 
+        $this->clusterMode = $clusterMode;
         Command::configureGenerator($keyCardinality, $memberCardinality);
 
         $commands = $this->registry->createInstances();
@@ -74,13 +77,18 @@ final class CommandFileGenerator
     private function nextEntry(array $commands, int &$state): ?array
     {
         $totalCommands = count($commands);
-        $poolSize = $totalCommands + count(self::NON_ATOMIC_OPERATIONS);
+        $nonAtomic = $this->clusterMode ? 0 : count(self::NON_ATOMIC_OPERATIONS);
+        $poolSize = $totalCommands + $nonAtomic;
         $index = random_int(0, $poolSize - 1);
 
         if ($index < $totalCommands) {
             /** @var Command $command */
             $command = $commands[$index];
-            return $command->buildCommand();
+            return $this->clusterMode ? $command->buildClusterCommand() : $command->buildCommand();
+        }
+
+        if ($this->clusterMode) {
+            return null;
         }
 
         $operation = self::NON_ATOMIC_OPERATIONS[$index - $totalCommands] ?? null;
@@ -93,6 +101,11 @@ final class CommandFileGenerator
 
     private function flushNonAtomicState(SplFileObject $file, int &$state): void
     {
+        if ($this->clusterMode) {
+            $state = self::STATE_ATOMIC;
+            return;
+        }
+
         while ($state !== self::STATE_ATOMIC) {
             $entry = $this->performNonAtomicOperation('EXEC', $state);
             if ($entry === null) {

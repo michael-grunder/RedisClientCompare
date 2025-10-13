@@ -34,5 +34,28 @@ class MsetnxCommand extends Command
 
         return $pairs;
     }
-}
 
+    protected function generateClusterArguments(): array
+    {
+        $count = random_int(1, 4);
+        $tag = $this->randomClusterSlotTag();
+        $pairs = [];
+        $keys = [];
+
+        while (count($keys) < $count) {
+            $key = $this->randomClusterKey($tag);
+            if (in_array($key, $keys, true)) {
+                continue;
+            }
+
+            $keys[] = $key;
+        }
+
+        foreach ($keys as $key) {
+            $pairs[] = $key;
+            $pairs[] = $this->randomValue();
+        }
+
+        return $pairs;
+    }
+}

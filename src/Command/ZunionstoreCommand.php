@@ -16,5 +16,9 @@ class ZunionstoreCommand extends ZsetCombinationCommand
     {
         return $this->buildCombinationArguments(true, false);
     }
-}
 
+    protected function generateClusterArguments(): array
+    {
+        return $this->buildClusterCombinationArguments(true, false);
+    }
+}
