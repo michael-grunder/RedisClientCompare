@@ -202,11 +202,7 @@ final class CommandRunner
 
         $result = $this->redis->discard();
 
-        if (($this->state & self::STATE_MULTI) !== 0) {
-            $this->state &= ~self::STATE_MULTI;
-        } elseif (($this->state & self::STATE_PIPELINE) !== 0) {
-            $this->state &= ~self::STATE_PIPELINE;
-        }
+        $this->state = self::STATE_ATOMIC;
 
         return $result;
     }
