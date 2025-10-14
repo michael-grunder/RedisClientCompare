@@ -23,6 +23,7 @@ $opt = getopt('', [
     'loglevel:',
     'keys:',
     'members:',
+    'commands:',
     'cluster',
 ]);
 
@@ -42,6 +43,12 @@ $logLevel = normalizeLogLevel((string) ($opt['loglevel'] ?? 'info'));
 $keys = (int) ($opt['keys'] ?? Command::DEFAULT_KEY_CARDINALITY);
 $members = (int) ($opt['members'] ?? Command::DEFAULT_MEMBER_CARDINALITY);
 $clusterMode = array_key_exists('cluster', $opt);
+$commandFilters = normalizeCommandFilters($opt['commands'] ?? null);
+
+if (array_key_exists('commands', $opt) && $commandFilters === []) {
+    fwrite(STDERR, "--commands requires at least one non-empty pattern\n");
+    exit(2);
+}
 
 if ($keys < 1) {
     fwrite(STDERR, "--keys must be >= 1\n");
@@ -117,6 +124,7 @@ logInfo(
         'keys' => number_format($keys),
         'members' => number_format($members),
         'cluster' => $clusterMode,
+        ...($commandFilters === [] ? [] : ['commands' => $commandFilters]),
     ]
 );
 
@@ -145,13 +153,15 @@ while (true) {
     ]);
 
     $generatorClusterOption = $clusterMode ? ' --cluster' : '';
+    $generatorCommandFilters = buildGeneratorCommandFilters($commandFilters);
     $cmd = sprintf(
-        '%s %s --keys=%d --members=%d%s %d %s',
+        '%s %s --keys=%d --members=%d%s%s %d %s',
         escapeshellarg(PHP_BINARY),
         escapeshellarg($generator),
         $keys,
         $members,
         $generatorClusterOption,
+        $generatorCommandFilters,
         $commandCount,
         escapeshellarg($commandsFile)
     );
@@ -282,6 +292,7 @@ function usage(): void
 Usage: compare-loop --old=/path/php-old --new=/path/php-new
   [--iters=0] [--sleep=0] [--count=200] [--host=127.0.0.1] [--port=6379]
   [--loglevel=info] [--keys=128] [--members=1024] [--cluster]
+  [--commands=pattern[,pattern...]]
 TXT
     );
 }
@@ -348,6 +359,23 @@ function runCommand(string $command): array
         'output' => $output,
         'duration' => $duration,
     ];
+}
+
+/**
+ * @param list<string> $commandFilters
+ */
+function buildGeneratorCommandFilters(array $commandFilters): string
+{
+    if ($commandFilters === []) {
+        return '';
+    }
+
+    $fragments = [];
+    foreach ($commandFilters as $filter) {
+        $fragments[] = ' --commands=' . escapeshellarg($filter);
+    }
+
+    return implode('', $fragments);
 }
 
 function logInfo(string $message, array $context = []): void
@@ -446,6 +474,43 @@ function normalizeLogLevel(string $level): string
     ];
 
     return $aliases[$normalized] ?? $normalized;
+}
+
+/**
+ * @param string|list<string>|null $value
+ * @return list<string>
+ */
+function normalizeCommandFilters(string|array|null $value): array
+{
+    if ($value === null) {
+        return [];
+    }
+
+    $segments = is_array($value) ? $value : [$value];
+    $filters = [];
+
+    foreach ($segments as $segment) {
+        if (!is_string($segment)) {
+            continue;
+        }
+
+        $parts = explode(',', $segment);
+        foreach ($parts as $part) {
+            $candidate = trim($part);
+            if ($candidate === '') {
+                continue;
+            }
+
+            $candidate = trim($candidate, " \t\n\r\0\x0B'\"");
+            if ($candidate === '') {
+                continue;
+            }
+
+            $filters[strtoupper($candidate)] = $candidate;
+        }
+    }
+
+    return array_values($filters);
 }
 
 function formatDuration(float $seconds): string

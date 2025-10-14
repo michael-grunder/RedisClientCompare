@@ -16,6 +16,7 @@ $keyCardinality = Command::DEFAULT_KEY_CARDINALITY;
 $memberCardinality = Command::DEFAULT_MEMBER_CARDINALITY;
 $includeExpirationCommands = false;
 $clusterMode = false;
+$commandFilterMap = [];
 
 while ($args !== [] && str_starts_with((string) ($args[0] ?? ''), '--')) {
     $option = (string) array_shift($args);
@@ -61,12 +62,36 @@ while ($args !== [] && str_starts_with((string) ($args[0] ?? ''), '--')) {
         case '--cluster':
             $clusterMode = true;
             break;
+        case '--commands':
+            $value = $value ?? ($args[0] ?? null);
+            if ($value === null) {
+                fwrite(STDERR, "--commands requires a value\n");
+                usage();
+                exit(2);
+            }
+            if ($value === ($args[0] ?? null) && $value !== null) {
+                array_shift($args);
+            }
+
+            $filters = extractCommandFilters((string) $value);
+            if ($filters === []) {
+                fwrite(STDERR, "--commands requires at least one non-empty pattern\n");
+                usage();
+                exit(2);
+            }
+
+            foreach ($filters as $filter) {
+                $commandFilterMap[strtoupper($filter)] = $filter;
+            }
+            break;
         default:
             fwrite(STDERR, sprintf("Unknown option '%s'\n", $name));
             usage();
             exit(2);
     }
 }
+
+$commandFilters = array_values($commandFilterMap);
 
 if ($keyCardinality < 1) {
     fwrite(STDERR, "--keys must be >= 1\n");
@@ -93,7 +118,8 @@ try {
         $keyCardinality,
         $memberCardinality,
         $includeExpirationCommands,
-        $clusterMode
+        $clusterMode,
+        $commandFilters
     );
 } catch (Throwable $exception) {
     fwrite(STDERR, ExceptionFormatter::format($exception) . PHP_EOL);
@@ -104,6 +130,31 @@ function usage(): void
 {
     fwrite(
         STDERR,
-        "Usage: gen-commands [--keys=<n>] [--members=<n>] [--include-expiration] [--cluster] <count> <out.jsonl>\n"
+        "Usage: gen-commands [--keys=<n>] [--members=<n>] [--include-expiration] [--cluster] [--commands=pattern[,pattern...]] <count> <out.jsonl>\n"
     );
+}
+
+/**
+ * @return list<string>
+ */
+function extractCommandFilters(string $value): array
+{
+    $parts = explode(',', $value);
+    $filters = [];
+
+    foreach ($parts as $part) {
+        $candidate = trim($part);
+        if ($candidate === '') {
+            continue;
+        }
+
+        $candidate = trim($candidate, " \t\n\r\0\x0B'\"");
+        if ($candidate === '') {
+            continue;
+        }
+
+        $filters[] = $candidate;
+    }
+
+    return $filters;
 }

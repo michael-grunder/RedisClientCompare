@@ -24,13 +24,17 @@ final class CommandFileGenerator
     ) {
     }
 
+    /**
+     * @param list<string> $commandFilters
+     */
     public function generate(
         int $count,
         string $outputPath,
         int $keyCardinality = Command::DEFAULT_KEY_CARDINALITY,
         int $memberCardinality = Command::DEFAULT_MEMBER_CARDINALITY,
         bool $includeExpirationCommands = false,
-        bool $clusterMode = false
+        bool $clusterMode = false,
+        array $commandFilters = []
     ): void
     {
         if ($count <= 0) {
@@ -49,6 +53,7 @@ final class CommandFileGenerator
                 )
             );
         }
+        $commands = $this->filterCommandsByName($commands, $commandFilters);
         if ($commands === []) {
             throw new RuntimeException('No command classes available after applying filters.');
         }
@@ -162,5 +167,61 @@ final class CommandFileGenerator
         }
 
         return null;
+    }
+
+    /**
+     * @param Command[] $commands
+     * @param list<string> $filters
+     * @return Command[]
+     */
+    private function filterCommandsByName(array $commands, array $filters): array
+    {
+        if ($filters === []) {
+            return $commands;
+        }
+
+        $normalizedFilters = array_values(array_filter(
+            array_map(
+                static fn(string $filter): string => strtoupper($filter),
+                $filters
+            ),
+            static fn(string $filter): bool => $filter !== ''
+        ));
+
+        if ($normalizedFilters === []) {
+            return $commands;
+        }
+
+        return array_values(
+            array_filter(
+                $commands,
+                function (Command $command) use ($normalizedFilters): bool {
+                    $name = strtoupper($command->getName());
+                    foreach ($normalizedFilters as $pattern) {
+                        if ($this->nameMatchesPattern($name, $pattern)) {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                }
+            )
+        );
+    }
+
+    private function nameMatchesPattern(string $name, string $pattern): bool
+    {
+        if ($pattern === '') {
+            return false;
+        }
+
+        if (function_exists('fnmatch')) {
+            return fnmatch($pattern, $name);
+        }
+
+        $escaped = preg_quote($pattern, '/');
+        $escaped = str_replace(['\*', '\?'], ['.*', '.'], $escaped);
+
+        return (bool) preg_match('/^' . $escaped . '$/', $name);
     }
 }
