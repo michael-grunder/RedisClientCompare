@@ -4,6 +4,8 @@
 declare(strict_types=1);
 
 use Michaelgrunder\RedisClientCompare\Command\Command;
+use Michaelgrunder\RedisClientCompare\Command\CommandFilter;
+use Michaelgrunder\RedisClientCompare\Command\CommandRegistry;
 use Michaelgrunder\RedisClientCompare\Logger\ExceptionFormatter;
 use Michaelgrunder\RedisClientCompare\Logger\LoggerFactory;
 use Psr\Log\LoggerInterface;
@@ -68,6 +70,20 @@ try {
     exit(2);
 }
 
+$resolvedCommandNames = [];
+if ($commandFilters !== []) {
+    $resolvedCommandNames = resolveFilteredCommandNames($commandFilters);
+    if ($resolvedCommandNames === []) {
+        logError('Command filters excluded every command', ['command_filters' => $commandFilters]);
+        exit(2);
+    }
+
+    logInfo('Command filters applied', [
+        'command_filters' => $commandFilters,
+        'commands' => $resolvedCommandNames,
+    ]);
+}
+
 $generator = __DIR__ . '/gen-commands';
 $runner = __DIR__ . '/run-commands';
 $comparator = __DIR__ . '/compare-outputs';
@@ -124,7 +140,10 @@ logInfo(
         'keys' => number_format($keys),
         'members' => number_format($members),
         'cluster' => $clusterMode,
-        ...($commandFilters === [] ? [] : ['commands' => $commandFilters]),
+        ...($commandFilters === [] ? [] : [
+            'command_filters' => $commandFilters,
+            'commands' => $resolvedCommandNames,
+        ]),
     ]
 );
 
@@ -474,6 +493,33 @@ function normalizeLogLevel(string $level): string
     ];
 
     return $aliases[$normalized] ?? $normalized;
+}
+
+/**
+ * @param list<string> $filters
+ * @return list<string>
+ */
+function resolveFilteredCommandNames(array $filters): array
+{
+    $registry = new CommandRegistry();
+    $commands = $registry->createInstances();
+
+    $commands = array_values(
+        array_filter(
+            $commands,
+            static fn (Command $command): bool => !$command->interactsWithExpiration()
+        )
+    );
+
+    $filtered = CommandFilter::apply($commands, $filters);
+    $names = array_map(
+        static fn (Command $command): string => $command->getName(),
+        $filtered
+    );
+
+    sort($names, SORT_STRING);
+
+    return $names;
 }
 
 /**

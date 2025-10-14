@@ -28,6 +28,20 @@ abstract class Command
         return static::ATTRIBUTES;
     }
 
+    public function getDataType(): ?string
+    {
+        $attributes = $this->getAttributes();
+        if (
+            isset($attributes['data_type']) &&
+            is_string($attributes['data_type']) &&
+            $attributes['data_type'] !== ''
+        ) {
+            return strtolower($attributes['data_type']);
+        }
+
+        return null;
+    }
+
     public function interactsWithExpiration(): bool
     {
         $attributes = $this->getAttributes();
