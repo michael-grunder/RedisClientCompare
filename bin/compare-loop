@@ -283,6 +283,7 @@ while (true) {
             'dur' => formatDuration(microtime(true) - $iterationStart),
             'command' => $cmd,
         ]);
+        outputDiffReplicationInstructions($comparator, $outputOld, $outputNew);
         logSummary('difference-detected', $totalRuns, $totalCommands, $startTime);
         exit(1);
     }
@@ -723,6 +724,59 @@ function maybeWarnAlwaysFalseCommands(
 
     $lastWarnedCommands = $names;
     $lastWarningIteration = $iteration;
+}
+
+function outputDiffReplicationInstructions(string $comparatorPath, string $oldPath, string $newPath): void
+{
+    $command = buildUserFacingDiffCommand($comparatorPath, $oldPath, $newPath);
+
+    fwrite(STDERR, PHP_EOL);
+    fwrite(STDERR, "ERROR: Difference found. Run the following command to inspect the outputs:" . PHP_EOL);
+    fwrite(STDERR, '  ' . $command . PHP_EOL . PHP_EOL);
+}
+
+function buildUserFacingDiffCommand(string $comparatorPath, string $oldPath, string $newPath): string
+{
+    $comparator = formatUserFacingCommandPath($comparatorPath, true);
+    $old = formatUserFacingCommandPath($oldPath, false);
+    $new = formatUserFacingCommandPath($newPath, false);
+
+    return sprintf('%s %s %s', $comparator, $old, $new);
+}
+
+function formatUserFacingCommandPath(string $path, bool $preferRelative): string
+{
+    $display = $path;
+    $resolved = realpath($path);
+    if ($resolved !== false) {
+        $display = $resolved;
+    }
+
+    if ($preferRelative) {
+        $cwd = getcwd();
+        if ($cwd !== false) {
+            $cwd = rtrim($cwd, DIRECTORY_SEPARATOR);
+            $prefix = $cwd . DIRECTORY_SEPARATOR;
+            if (str_starts_with($display, $prefix)) {
+                $display = substr($display, strlen($prefix));
+            }
+        }
+    }
+
+    return formatCommandToken($display);
+}
+
+function formatCommandToken(string $token): string
+{
+    if ($token === '') {
+        return "''";
+    }
+
+    if (preg_match('/^[A-Za-z0-9._\\/-:]+$/', $token) === 1) {
+        return $token;
+    }
+
+    return escapeshellarg($token);
 }
 
 function logger(): LoggerInterface
