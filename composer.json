@@ -9,10 +9,12 @@
         }
     },
     "bin": [
+        "bin/redis-client-compare",
         "bin/gen-commands",
         "bin/run-commands",
         "bin/compare-outputs",
-        "bin/compare-loop"
+        "bin/compare-loop",
+        "bin/needed"
     ],
     "authors": [
         {
@@ -21,6 +23,7 @@
         }
     ],
     "require": {
-        "monolog/monolog": "^3.5"
+        "monolog/monolog": "^3.5",
+        "symfony/console": "^7.3"
     }
 }

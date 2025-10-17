@@ -3,48 +3,14 @@
 
 declare(strict_types=1);
 
-use Michaelgrunder\RedisClientCompare\Logger\ExceptionFormatter;
-use Michaelgrunder\RedisClientCompare\Runner\CommandRunner;
+use Michaelgrunder\RedisClientCompare\Console\ApplicationFactory;
+use Symfony\Component\Console\Input\ArgvInput;
+use Symfony\Component\Console\Output\ConsoleOutput;
 
 require __DIR__ . '/../vendor/autoload.php';
 
-$aggregateMode = false;
-$clusterMode = false;
-$arguments = [];
+$application = ApplicationFactory::create();
+$application->setDefaultCommand('commands:run', true);
 
-for ($i = 1; $i < $argc; $i++) {
-    $argument = $argv[$i];
-    if ($argument === '--aggregate' || strncmp($argument, '--aggregate=', 12) === 0) {
-        $aggregateMode = true;
-        continue;
-    }
-
-    if ($argument === '--cluster') {
-        $clusterMode = true;
-        continue;
-    }
-
-    if (strncmp($argument, '--', 2) === 0) {
-        fwrite(STDERR, sprintf("Unknown option '%s'\n", $argument));
-        exit(2);
-    }
-
-    $arguments[] = $argument;
-}
-
-if (count($arguments) < 2) {
-    fwrite(STDERR, "Usage: run-commands [--aggregate] [--cluster] <commands.jsonl> <out.jsonl> [host] [port]\n");
-    exit(2);
-}
-
-$commandsFile = $arguments[0];
-$outputFile = $arguments[1];
-$host = $arguments[2] ?? '127.0.0.1';
-$port = isset($arguments[3]) ? (int) $arguments[3] : 6379;
-
-try {
-    (new CommandRunner())->run($commandsFile, $outputFile, $host, $port, $aggregateMode, $clusterMode);
-} catch (Throwable $exception) {
-    fwrite(STDERR, ExceptionFormatter::format($exception) . PHP_EOL);
-    exit(1);
-}
+$exitCode = $application->run(new ArgvInput(), new ConsoleOutput());
+exit($exitCode);
