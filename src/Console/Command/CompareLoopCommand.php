@@ -26,6 +26,7 @@ final class CompareLoopCommand extends SymfonyCommand
     private const EXIT_GEN_COMMANDS_FAILED = 3;
     private const EXIT_RUN_COMMANDS_OLD_FAILED = 4;
     private const EXIT_RUN_COMMANDS_NEW_FAILED = 5;
+    private const EXIT_CAPABILITY_MISMATCH = 6;
 
     private ?LoggerInterface $logger = null;
     private ?SymfonyStyle $io = null;
@@ -56,6 +57,12 @@ final class CompareLoopCommand extends SymfonyCommand
                 InputOption::VALUE_REQUIRED,
                 'Log frequency (in iterations) for commands that only return false.',
                 25
+            )
+            ->addOption(
+                'include-setoptions',
+                null,
+                InputOption::VALUE_NONE,
+                'Include SETOPTION meta commands when generating workloads.'
             );
     }
 
@@ -75,6 +82,7 @@ final class CompareLoopCommand extends SymfonyCommand
         $members = (int) $input->getOption('members');
         $clusterMode = (bool) $input->getOption('cluster');
         $warningInterval = (int) $input->getOption('always-false-warning-interval');
+        $includeSetOptions = (bool) $input->getOption('include-setoptions');
 
         if ($phpOld === '' || $phpNew === '') {
             $this->io->error('Both --old and --new must be provided.');
@@ -149,6 +157,7 @@ final class CompareLoopCommand extends SymfonyCommand
             $keys,
             $members,
             $clusterMode,
+            $includeSetOptions,
             $commandFilters,
             $warningInterval,
             $resolvedCommandNames
@@ -171,6 +180,7 @@ final class CompareLoopCommand extends SymfonyCommand
         int $keys,
         int $members,
         bool $clusterMode,
+        bool $includeSetOptions,
         array $commandFilters,
         int $warningInterval,
         array $resolvedCommandNames
@@ -196,6 +206,48 @@ final class CompareLoopCommand extends SymfonyCommand
             $this->logSummary('identical-phpredis-version', 0, 0, \microtime(true));
 
             return self::EXIT_IDENTICAL_VERSION;
+        }
+
+        if ($includeSetOptions) {
+            $oldCapabilities = $this->probeRedisCapabilities($phpOld);
+            $newCapabilities = $this->probeRedisCapabilities($phpNew);
+
+            if ($oldCapabilities === null || $newCapabilities === null) {
+                $this->logError('Failed to probe phpredis capabilities', [
+                    'php_old' => $phpOld,
+                    'php_new' => $phpNew,
+                ]);
+                $this->logSummary('capability-probe-failed', 0, 0, \microtime(true));
+                return self::EXIT_CAPABILITY_MISMATCH;
+            }
+
+            if (
+                $oldCapabilities['loaded'] === false ||
+                $newCapabilities['loaded'] === false
+            ) {
+                $this->logError('phpredis extension missing for capability probe', [
+                    'php_old' => $phpOld,
+                    'php_new' => $phpNew,
+                    'capabilities_old' => $oldCapabilities,
+                    'capabilities_new' => $newCapabilities,
+                ]);
+                $this->logSummary('capability-missing-extension', 0, 0, \microtime(true));
+                return self::EXIT_CAPABILITY_MISMATCH;
+            }
+
+            if (
+                $oldCapabilities['compressors'] !== $newCapabilities['compressors'] ||
+                $oldCapabilities['serializers'] !== $newCapabilities['serializers']
+            ) {
+                $this->logError('phpredis capability mismatch detected', [
+                    'php_old' => $phpOld,
+                    'php_new' => $phpNew,
+                    'capabilities_old' => $oldCapabilities,
+                    'capabilities_new' => $newCapabilities,
+                ]);
+                $this->logSummary('capability-mismatch', 0, 0, \microtime(true));
+                return self::EXIT_CAPABILITY_MISMATCH;
+            }
         }
 
         foreach ([$generator, $runner, $comparator] as $binary) {
@@ -239,6 +291,7 @@ final class CompareLoopCommand extends SymfonyCommand
                     'keys' => number_format($keys),
                     'members' => number_format($members),
                     'cluster' => $clusterMode,
+                    'setoptions' => $includeSetOptions,
                     ...($commandFilters === [] ? [] : [
                         'command_filters' => $commandFilters,
                         'commands' => $resolvedCommandNames,
@@ -275,14 +328,16 @@ final class CompareLoopCommand extends SymfonyCommand
                 ]);
 
                 $generatorClusterOption = $clusterMode ? ' --cluster' : '';
+                $generatorSetOptionsFlag = $includeSetOptions ? ' --include-setoptions' : '';
                 $generatorCommandFilters = $this->buildGeneratorCommandFilters($commandFilters);
                 $cmd = sprintf(
-                    '%s %s --keys=%d --members=%d%s%s %d %s',
+                    '%s %s --keys=%d --members=%d%s%s%s %d %s',
                     escapeshellarg(PHP_BINARY),
                     escapeshellarg($generator),
                     $keys,
                     $members,
                     $generatorClusterOption,
+                    $generatorSetOptionsFlag,
                     $generatorCommandFilters,
                     $commandCount,
                     escapeshellarg($commandsFile)
@@ -420,6 +475,102 @@ final class CompareLoopCommand extends SymfonyCommand
                 escapeshellarg("echo phpversion('redis');")
             )
         ));
+    }
+
+    /**
+     * @return array{loaded:bool,compressors:list<int>,serializers:list<int>}|null
+     */
+    private function probeRedisCapabilities(string $phpBinary): ?array
+    {
+        $script = <<<'PHP'
+if (!extension_loaded('redis')) {
+    echo json_encode(['loaded' => false, 'compressors' => [], 'serializers' => []]);
+    return;
+}
+
+$compressors = [];
+if (defined('Redis::COMPRESSION_NONE')) {
+    $compressors[] = (int) Redis::COMPRESSION_NONE;
+}
+if (defined('Redis::COMPRESSION_LZF')) {
+    $compressors[] = (int) Redis::COMPRESSION_LZF;
+}
+if (defined('Redis::COMPRESSION_ZSTD')) {
+    $compressors[] = (int) Redis::COMPRESSION_ZSTD;
+}
+if (defined('Redis::COMPRESSION_LZ4')) {
+    $compressors[] = (int) Redis::COMPRESSION_LZ4;
+}
+
+$serializers = [];
+if (defined('Redis::SERIALIZER_NONE')) {
+    $serializers[] = (int) Redis::SERIALIZER_NONE;
+}
+if (defined('Redis::SERIALIZER_PHP')) {
+    $serializers[] = (int) Redis::SERIALIZER_PHP;
+}
+if (defined('Redis::SERIALIZER_IGBINARY')) {
+    $serializers[] = (int) Redis::SERIALIZER_IGBINARY;
+}
+if (defined('Redis::SERIALIZER_MSGPACK')) {
+    $serializers[] = (int) Redis::SERIALIZER_MSGPACK;
+}
+if (defined('Redis::SERIALIZER_JSON')) {
+    $serializers[] = (int) Redis::SERIALIZER_JSON;
+}
+
+sort($compressors);
+$compressors = array_values(array_unique($compressors));
+sort($serializers);
+$serializers = array_values(array_unique($serializers));
+
+echo json_encode([
+    'loaded' => true,
+    'compressors' => $compressors,
+    'serializers' => $serializers,
+]);
+PHP;
+
+        $command = sprintf('%s -r %s', escapeshellarg($phpBinary), escapeshellarg($script));
+
+        $output = [];
+        $code = 0;
+        exec($command . ' 2>&1', $output, $code);
+
+        if ($code !== 0) {
+            $this->logDebug('Capability probe command failed', [
+                'php' => $phpBinary,
+                'command' => $command,
+                'exit_code' => $code,
+                'output' => $this->normalizeCommandOutput($output),
+            ]);
+            return null;
+        }
+
+        $payload = \trim(implode('', $output));
+        $decoded = \json_decode($payload, true);
+
+        if (!\is_array($decoded) || !\array_key_exists('loaded', $decoded)) {
+            $this->logDebug('Capability probe returned invalid payload', [
+                'php' => $phpBinary,
+                'payload' => $payload,
+            ]);
+            return null;
+        }
+
+        $compressors = array_map('intval', $decoded['compressors'] ?? []);
+        sort($compressors);
+        $compressors = array_values(array_unique($compressors));
+
+        $serializers = array_map('intval', $decoded['serializers'] ?? []);
+        sort($serializers);
+        $serializers = array_values(array_unique($serializers));
+
+        return [
+            'loaded' => (bool) $decoded['loaded'],
+            'compressors' => $compressors,
+            'serializers' => $serializers,
+        ];
     }
 
     private function buildWorkDir(): string

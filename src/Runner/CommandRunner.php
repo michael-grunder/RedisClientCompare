@@ -228,6 +228,7 @@ final class CommandRunner
             'MULTI' => $this->startMulti(),
             'EXEC' => $this->executeExec(),
             'DISCARD' => $this->executeDiscard(),
+            'SETOPTION' => $this->executeSetOption($args),
             default => $this->client->rawCommand($commandName, ...$args),
         };
     }
@@ -272,6 +273,80 @@ final class CommandRunner
         $this->state |= self::STATE_PIPELINE;
 
         return $result;
+    }
+
+    /**
+     * @param array<int, mixed> $args
+     */
+    private function executeSetOption(array $args): mixed
+    {
+        if ($this->client === null) {
+            throw new RuntimeException('Redis client not initialized.');
+        }
+
+        if (!isset($args[0], $args[1])) {
+            throw new RuntimeException('SETOPTION requires both option and value.');
+        }
+
+        $option = $this->resolveRedisConstant($args[0]);
+        $value = $args[1];
+
+        if (!is_int($option)) {
+            if (is_numeric($option)) {
+                $option = (int) $option;
+            } else {
+                throw new RuntimeException('SETOPTION option must be an integer value.');
+            }
+        }
+
+        if (
+            $option === Redis::OPT_PREFIX &&
+            !is_string($value)
+        ) {
+            $value = (string) $value;
+        } else {
+            $value = $this->resolveRedisConstant($value);
+        }
+
+        if ($this->clusterMode && $this->client instanceof RedisCluster) {
+            return $this->client->setOption($option, $value);
+        }
+
+        if ($this->client instanceof Redis) {
+            return $this->client->setOption($option, $value);
+        }
+
+        throw new RuntimeException('Unsupported Redis client for SETOPTION.');
+    }
+
+    private function resolveRedisConstant(mixed $value): mixed
+    {
+        if (!is_string($value)) {
+            return $value;
+        }
+
+        $trimmed = trim($value);
+
+        if ($trimmed === '') {
+            return $trimmed;
+        }
+
+        if (\defined($trimmed)) {
+            return \constant($trimmed);
+        }
+
+        if (!str_contains($trimmed, '::')) {
+            $candidate = 'Redis::' . $trimmed;
+            if (\defined($candidate)) {
+                return \constant($candidate);
+            }
+        }
+
+        if (is_numeric($trimmed)) {
+            return (int) $trimmed;
+        }
+
+        return $value;
     }
 
     private function startMulti(): mixed

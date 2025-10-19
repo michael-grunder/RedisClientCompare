@@ -53,6 +53,12 @@ final class GenerateCommandsCommand extends SymfonyCommand
                 'Generate commands suitable for cluster mode.'
             )
             ->addOption(
+                'include-setoptions',
+                null,
+                InputOption::VALUE_NONE,
+                'Include SETOPTION meta commands when generating fuzz cases.'
+            )
+            ->addOption(
                 'commands',
                 null,
                 InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
@@ -68,6 +74,7 @@ final class GenerateCommandsCommand extends SymfonyCommand
         $memberCardinality = (int) $input->getOption('members');
         $includeExpiration = (bool) $input->getOption('include-expiration');
         $cluster = (bool) $input->getOption('cluster');
+        $includeSetOptions = (bool) $input->getOption('include-setoptions');
 
         /** @var list<string> $commandFilters */
         $commandFilters = $this->normalizeCommandFilters($input->getOption('commands'));
@@ -97,7 +104,8 @@ final class GenerateCommandsCommand extends SymfonyCommand
                 $memberCardinality,
                 $includeExpiration,
                 $cluster,
-                $commandFilters
+                $commandFilters,
+                $includeSetOptions
             );
         } catch (\Throwable $exception) {
             $io->error(ExceptionFormatter::format($exception));
